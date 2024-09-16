@@ -80,6 +80,8 @@ class RavelInterpretorHypernetwork(nn.Module):
         source_intervention_mask: torch.Tensor = None,
         labels: torch.Tensor = None,
         output_intervention_weight: bool = True,
+        is_causal: torch.Tensor = None,
+        causal_loss_weight: float = 1.0,
         intervention_weight: torch.Tensor = None,
         inference_mode = None,
     ):
@@ -103,7 +105,15 @@ class RavelInterpretorHypernetwork(nn.Module):
                 dim=1,
             )
             
+            if is_causal is not None:
+                loss_weight = torch.ones_like(labels, dtype=log_prob_predictions.dtype)
+                loss_weight[is_causal, :] = causal_loss_weight
+            
             labels = labels.reshape(-1)
+            
+            if is_causal is not None:
+                loss_weight = loss_weight.reshape(-1)
+
             assert labels.shape == log_prob_predictions.shape[:-1]
             
             # Only consider the tokens that are not -100 in target_labels
@@ -116,10 +126,18 @@ class RavelInterpretorHypernetwork(nn.Module):
             labels = labels[label_indices]
             
             # Compute the cross-entropy loss with masking
-            criterion = torch.nn.CrossEntropyLoss(reduction="mean")
-            loss = criterion(log_prob_predictions, labels.long())
-            _pred["loss"] = loss
             
+            if is_causal is None:
+                criterion = torch.nn.CrossEntropyLoss(reduction="mean")
+                loss = criterion(log_prob_predictions, labels.long())
+            else:
+                loss_weight = loss_weight[label_indices]
+                criterion = torch.nn.CrossEntropyLoss(reduction="none")
+                loss = criterion(log_prob_predictions, labels.long())
+                loss = (loss * loss_weight).mean()
+                
+            _pred["loss"] = loss
+        
         return _pred
         
     
@@ -322,6 +340,7 @@ class RavelInterpretorHypernetwork(nn.Module):
         eval_per_steps: int = None,
         checkpoint_per_steps: int = None,
         apply_source_selection_sparsity_loss=False,
+        causal_loss_weight=1.0,
         lr=3e-4,
         weight_decay=0.01,
         save_dir=None,
@@ -405,7 +424,7 @@ class RavelInterpretorHypernetwork(nn.Module):
                     self.batch = batch
                     current_batch_size = len(batch["editor_input_ids"])
                     num_datapoints_in_epoch += current_batch_size
-
+                    
                     prediction = self.forward(
                         editor_input_ids=batch["editor_input_ids"].to("cuda"),
                         base_input_ids=batch["base_input_ids"].to("cuda"),
@@ -415,6 +434,8 @@ class RavelInterpretorHypernetwork(nn.Module):
                         source_attention_mask=batch["source_attention_mask"].to("cuda"),
                         source_intervention_mask=batch["source_intervention_mask"].to("cuda"),
                         labels=batch["labels"].to("cuda"),
+                        is_causal=batch["is_causal"].to("cuda"),
+                        causal_loss_weight=causal_loss_weight,
                         output_intervention_weight=True,
                         inference_mode=None
                     )

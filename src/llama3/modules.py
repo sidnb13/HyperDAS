@@ -527,7 +527,6 @@ class LlamaInterpretor(nn.Module):
                 source_intervention_mask = source_attention_mask.clone()
             else:
                 source_intervention_mask = torch.ones_like(source_input_ids)
-                
             
         # dimensions of target_hidden_states:
         # batch_size, token_sequence_length, num_layers = 13, resid_width = 768
@@ -594,7 +593,7 @@ class LlamaInterpretor(nn.Module):
         elif inference_mode == "column_argmax":
             batch_size, num_src_pos, num_base_pos = intervention_weight.shape
             intervention_weight = torch.argmax(intervention_weight, dim=1)
-            intervention_weight = torch.nn.functional.one_hot(intervention_weight, num_classes=num_src_pos).float().permute(0, 2, 1)            
+            intervention_weight = torch.nn.functional.one_hot(intervention_weight, num_classes=num_src_pos).to(dtype=intervention_weight.dtype).permute(0, 2, 1)            
         elif inference_mode == "bidding_argmax":
             batch_size, num_src_pos, num_base_pos = intervention_weight.shape
             bidding_weight = torch.argmax(intervention_weight[:, :-1, :], dim=-1)
@@ -618,6 +617,7 @@ class LlamaInterpretor(nn.Module):
         )
         
         source_hidden_states = source_output.hidden_states[intervention_layer]
+        
         intervention_matrix = torch.einsum("bij,bid->bijd", intervention_weight[:, :-1, :], source_hidden_states) # TODO: Fix it to help the new implement 
         intervention_matrix = intervention_matrix.sum(dim=1) 
         
@@ -629,10 +629,19 @@ class LlamaInterpretor(nn.Module):
             base_intervention_weight = intervention_weight[:, -1, :]
             
             if self.use_das_intervention:
-                source_intervention_hidden_states = intervention_matrix + torch.einsum("bid,bi->bid", base_hidden_states, - base_intervention_weight)
+                
+                # print(intervention_matrix.shape)
+                # print(intervention_matrix[0, 1])
+                # print(base_hidden_states.shape)
+                # print(base_intervention_weight[0])
+                
+                # print(torch.einsum("bid,bi->bid", base_hidden_states, - base_intervention_weight)[0, 1])
+                # print(torch.einsum("bid,bi->bid", base_hidden_states, base_intervention_weight)[0, 1])
+                # source_intervention_hidden_states = intervention_matrix + torch.einsum("bid,bi->bid", base_hidden_states, - base_intervention_weight)
+                
+                source_intervention_hidden_states = intervention_matrix + torch.einsum("bid,bi->bid", base_hidden_states, base_intervention_weight)
                 
                 if self.das_selective_subspace:
-                    
                     mixed_output = self.das_module(base_hidden_states, source_intervention_hidden_states, hypernet_hidden_states)
                 else:
                     mixed_output = self.das_module(base_hidden_states, source_intervention_hidden_states, batch_size)
