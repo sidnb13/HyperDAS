@@ -537,7 +537,7 @@ class LlamaInterpretor(nn.Module):
         source_normalization_factors = source_hidden_states.norm(dim=-1, keepdim=True)
         source_hidden_states = source_hidden_states / source_normalization_factors
 
-        if intervention_weight is None:
+        if intervention_weight is None or inference_mode == "groundtruth":
             
             n_layer = base_hidden_states.shape[2]
                         
@@ -574,10 +574,14 @@ class LlamaInterpretor(nn.Module):
                 source_attention_mask=collapsed_source_attention_mask,
                 use_cache=False
             )
-
-            # Multiply the outputs by normalization factors
-            hypernet_hidden_states, intervention_weight = interpretor_output
-            intervention_weight = intervention_weight.squeeze()
+            
+            if inference_mode == "groundtruth":
+                hypernet_hidden_states, _ = interpretor_output
+                intervention_weight = intervention_weight.to(dtype=hypernet_hidden_states.dtype)
+            else:
+                # Multiply the outputs by normalization factors
+                hypernet_hidden_states, intervention_weight = interpretor_output
+                intervention_weight = intervention_weight.squeeze()
             
         if inference_mode == "global_argmax":
             batch_size, _, num_base_pos = intervention_weight.shape
@@ -607,6 +611,7 @@ class LlamaInterpretor(nn.Module):
             intervention_weight = torch.argmax(intervention_weight, dim=1)
             intervention_weight = torch.nn.functional.one_hot(intervention_weight, num_classes=num_src_pos).to(dtype=intervention_weight.dtype).permute(0, 2, 1)
     
+
         if len(intervention_weight.shape) == 2:
             intervention_weight = intervention_weight.unsqueeze(0) # Unsqueeze first dim if batch size = 1
                 

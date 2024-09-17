@@ -157,6 +157,7 @@ class RavelInterpretorHypernetwork(nn.Module):
             for i in range(len(batch["base_entity_position_ids"])):
                 intervention_weight[i, -1, batch["base_entity_position_ids"][i]] = 0.0
                 intervention_weight[i, batch["source_entity_position_ids"][i], batch["base_entity_position_ids"][i]] = 1.0
+            
         else:
             intervention_weight=None
         
@@ -172,7 +173,8 @@ class RavelInterpretorHypernetwork(nn.Module):
                 source_intervention_mask=batch["source_intervention_mask"].to("cuda"),
                 labels=batch["labels"].to("cuda"),
                 output_intervention_weight=True,
-                inference_mode=inference_mode
+                inference_mode=inference_mode,
+                intervention_weight=intervention_weight
             )    
             
             batch_pred_ids = torch.argmax(predictions["logits"], dim=-1)

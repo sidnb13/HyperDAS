@@ -14,12 +14,15 @@ import json
 from tqdm import tqdm
 from datasets import Dataset, load_from_disk
 from src.data_utils import get_ravel_collate_fn, generate_ravel_dataset_from_filtered
-from src.das_utils import LowRankRotatedSpaceIntervention
 from src.utils import add_fwd_hooks
 import argparse
+from pyvene import IntervenableConfig, RepresentationConfig, LowRankRotatedSpaceIntervention, IntervenableModel, count_parameters
+
+
 
 from torch import optim
 from transformers import AutoTokenizer, LlamaForCausalLM
+from transformers import get_scheduler
 
 
 def run_experiment(
@@ -43,6 +46,9 @@ def run_experiment(
 ):
     if save_dir is not None:
         save_dir = os.path.join("./models", save_dir)
+
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
         
     if log_wandb:
         wandb.init(
@@ -85,56 +91,45 @@ def run_experiment(
     model = LlamaForCausalLM.from_pretrained(model_name_or_path, torch_dtype=torch.bfloat16)
     model = model.to("cuda")
     
-    das_module = LowRankRotatedSpaceIntervention(
-        embed_dim=model.config.hidden_size,
-        low_rank_dimension=das_dimension,
+    intervention_config = IntervenableConfig(
+        model_type=type(model),
+        representations=[
+        RepresentationConfig(
+              intervention_layer,  # layer
+              'block_output',  # intervention repr
+              "pos",  # intervention unit
+              1,  # max number of unit
+              das_dimension)
+      ],
+      intervention_types=LowRankRotatedSpaceIntervention,
     )
-    das_module = das_module.to("cuda")
     
-    for param in model.parameters():
-        param.requires_grad = False
-        
-    trainable_parameters = []
-    for name, param in das_module.named_parameters():
-        if "das_module" in name:
-            if "rotate_layer" in name:
-                trainable_parameters += [{"params": param, "lr": 1e-3, "weight_decay": 0.0}]
-            else:
-                trainable_parameters += [{"params": param}]
-        else:
-            trainable_parameters += [{"params": param}]
+    intervenable = IntervenableModel(intervention_config, model)
+    intervenable.set_device(model.device)
+    intervenable.disable_model_gradients()
     
-    opt = optim.AdamW(trainable_parameters, lr=lr)  # usually: lr = 5e-5. 1e-3 worked well!
+    
+    inv_keys = list(intervenable.interventions.keys())[0]
+    
+    optimizer_params = []
+    for k, v in intervenable.interventions.items():
+        optimizer_params += [{'params': v[0].rotate_layer.parameters()}]
+            
+    optimizer = torch.optim.AdamW(optimizer_params,
+                                    lr=lr,
+                                    weight_decay=0)
 
     total_steps = len(data_loader) * n_epochs
+    scheduler = get_scheduler(
+        'constant',
+        optimizer=optimizer,
+        num_training_steps=total_steps
+    )
+    
+    print("Model trainable parameters: ", count_parameters(intervenable.model))
+    print("Intervention trainable parameters: ", intervenable.count_parameters())
+
     cur_steps = 0
-    
-    
-    @torch.no_grad()
-    def _run_target_model_for_encoded_hidden_states(
-        target_input_ids: torch.Tensor,
-        target_attention_mask: torch.Tensor,
-        position_ids: torch.Tensor = None,
-    ):
-        """Gets the hidden states from the target model, if necessary"""
-
-        if position_ids is not None:
-            outputs = model(
-                input_ids=target_input_ids,
-                attention_mask=target_attention_mask,
-                position_ids=position_ids,
-                output_hidden_states=True,
-            )
-
-        else:
-            outputs = model(
-                input_ids=target_input_ids,
-                attention_mask=target_attention_mask,
-                output_hidden_states=True,
-            )
-
-        return outputs.hidden_states
-    
     
     def forward(
         base_input_ids: torch.Tensor = None,
@@ -150,7 +145,6 @@ def run_experiment(
         if intervention_layer is None:
             raise ValueError("intervention_layer must be specified")
         
-        
         if base_position_ids is None:
             # 0 for all the padding tokens and start from 1 for the rest
             base_position_ids = torch.cumsum(base_attention_mask, dim=1) * base_attention_mask
@@ -158,67 +152,35 @@ def run_experiment(
         if source_position_ids is None:
             source_position_ids = torch.cumsum(source_attention_mask, dim=1) * source_attention_mask
         
-        # Run target model for encoded hidden states
-        base_hidden_states = torch.stack(
-            _run_target_model_for_encoded_hidden_states(
-                base_input_ids, base_attention_mask, base_position_ids
-            ),  # seems to break while we are passing thru batch_size=1; the last (12th =) has different dimensions
-            dim=2,
-        )
-        
-        source_hidden_states = torch.stack(
-            _run_target_model_for_encoded_hidden_states(
-                source_input_ids, source_attention_mask, source_position_ids
-            ),
-            dim=2,
-        )
-        
-        source_output = model(
-            input_ids=source_input_ids,
-            attention_mask=source_attention_mask,
-            output_hidden_states=True,
-        )
-        
-        source_hidden_states = source_output.hidden_states[intervention_layer]
-        
-        token_source_hidden_state = source_hidden_states[
-            torch.arange(source_hidden_states.size(0)), source_intervention_position
-        ]
-        
-        def swap_representation_with_das(module, input, output):
-            base_hidden_states = output[0].clone()
-            batch_size = base_hidden_states.shape[0]
-            
-            token_base_hidden_state = base_hidden_states[
-                torch.arange(batch_size), base_intervention_position
-            ]
-            
-            mixed_output = das_module(token_base_hidden_state, token_source_hidden_state, batch_size)
-            output[0][:, base_intervention_position, :] += mixed_output - token_base_hidden_state
-            
-            
-        hooks = [(model.model.layers[intervention_layer - 1], swap_representation_with_das)]
-        
-        with add_fwd_hooks(hooks):
-            # THIS IS THE LINE WHERE THE MODEL IS CALLED (AND THE EDITOR IS CALLED AT
-            # THE END OF `layer` AS A SIDE EFFECT)
-            target_result = model(
-                input_ids=base_input_ids,
-                attention_mask=base_attention_mask,
-                position_ids=base_position_ids,
-                output_hidden_states=True,
+        # print(source_intervention_position.unsqueeze(0).shape, base_intervention_position.unsqueeze(0).shape)
+        b_s = base_input_ids.shape[0]
+        intervention_locations = {
+            "sources->base": (
+                source_intervention_position.unsqueeze(0).unsqueeze(-1),
+                base_intervention_position.unsqueeze(0).unsqueeze(-1)
             )
-
-        return target_result
-            
+        }
         
-    
-    
+        _, counterfactual_outputs = intervenable(
+            {
+                "input_ids": base_input_ids,
+                'attention_mask': base_attention_mask,
+                'position_ids': base_position_ids
+            }, [
+                {
+                    "input_ids": source_input_ids,
+                    'attention_mask': source_attention_mask,
+                    'position_ids': source_position_ids
+                }
+            ] , intervention_locations
+        )
+        
+        return counterfactual_outputs
+        
+                
     def eval_accuracy(test_loader, eval_n_label_tokens=3):
         
-        das_module.eval()
-        model.eval()
-        
+        intervenable.eval()
         correct_idxs = []
         is_causal = []
         
@@ -285,9 +247,6 @@ def run_experiment(
         }
                     
         return accuracies
-                
-        
-        
     
     for epoch in range(n_epochs):
         # Create a tqdm progress bar
@@ -307,7 +266,7 @@ def run_experiment(
                 if eval_per_steps is not None:
                     if cur_steps % eval_per_steps == 0:
                         accuracies = eval_accuracy(
-                            data_loader, eval_n_label_tokens=3
+                            test_data_loader, eval_n_label_tokens=3
                         )
                         
                         causal_acc = accuracies["causal"]
@@ -328,7 +287,7 @@ def run_experiment(
                 if checkpoint_per_steps is not None:
                     if cur_steps % checkpoint_per_steps == 0 and save_dir is not None:
                         print("Saving model to {}".format(os.path.join(save_dir, f"model_epoch_{epoch}_step_{step}")))
-                        torch.save(das_module.state_dict(), os.path.join(save_dir, "das_epoch_{epoch}_step_{step}.pt"))
+                        torch.save(intervenable.interventions[inv_keys][0].state_dict(), os.path.join(save_dir, "das_epoch_{epoch}_step_{step}.pt"))
                 
                 current_batch_size = len(batch["labels"])
                 num_datapoints_in_epoch += current_batch_size
@@ -354,7 +313,7 @@ def run_experiment(
                     source_intervention_position=source_intervention_position,
                     intervention_layer=intervention_layer,
                 )
-                
+                                
                 logits = output.logits
                 labels = batch["labels"].to("cuda")
                 
@@ -392,13 +351,12 @@ def run_experiment(
                 training_loss += prediction_loss
                                     
                 training_loss.backward()
-                nn.utils.clip_grad_norm_(
-                    das_module.parameters(), 4.0
-                )
-                opt.step()
+                            
                 # metrics
                 epoch_train_loss += training_loss.item() * current_batch_size
-                opt.zero_grad()
+                
+                optimizer.step()
+                optimizer.zero_grad()
                 
                 # TEST: orthogonalize the rotation matrix every step
                 """if self.use_das_intervention:
@@ -428,7 +386,7 @@ def run_experiment(
                 )
                 
     if save_dir is not None:
-        torch.save(das_module.state_dict(), os.path.join(save_dir, "final_das_module.pt"))
+        torch.save(intervenable.interventions[inv_keys][0].state_dict(), os.path.join(save_dir, "final_das_module.pt"))
 
     if log_wandb:
         wandb.finish()
@@ -442,24 +400,23 @@ if __name__ == "__main__":
     parser.add_argument("--log_wandb", type=bool, default=False)
     parser.add_argument("--wandb_project", type=str, default="hypernetworks-interpretor-mdas")
     parser.add_argument("--wandb_run_name", type=str, default=None)
-    parser.add_argument("--intervention_layer", type=int, default=14)
+    parser.add_argument("--intervention_layer", type=int, default=12)
     
     parser.add_argument("--load_trained_from", type=str, default=None)
     
-    parser.add_argument("--n_epochs", type=int, default=20)
+    parser.add_argument("--n_epochs", type=int, default=5)
     parser.add_argument("--model_name_or_path", type=str, default="./models/llama3-8b")
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--save_dir", type=str, default=None)
-    parser.add_argument("--test_path", type=str, default="./experiments/ravel/data/ravel_city_Country_test")
-    parser.add_argument("--train_path", type=str, default="./experiments/ravel/data/ravel_city_Country_train")
-    parser.add_argument("--causal_loss_weight", type=float, default=5)
+    parser.add_argument("--test_path", type=str, default="./experiments/ravel/data/ravel_sanity_check_test")
+    parser.add_argument("--train_path", type=str, default="./experiments/ravel/data/ravel_sanity_check_train")
+    parser.add_argument("--causal_loss_weight", type=float, default=4)
     
-    parser.add_argument("--intervention_location", type=str, choices=["last_token", "last_entity_token"], default="last_token")
+    parser.add_argument("--intervention_location", type=str, choices=["last_token", "last_entity_token"], default="last_entity_token")
         
-    
     # if None, use Boundless DAS
     parser.add_argument("--das_dimension", type=int, default=128)
-    parser.add_argument("--lr", type=float, default=3e-5)
+    parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--eval_per_steps", type=int, default=100)
     parser.add_argument("--checkpoint_per_steps", type=int, default=None)
     
