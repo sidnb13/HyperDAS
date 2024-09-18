@@ -287,6 +287,8 @@ def generate_ravel_dataset(
         for _ in range(sample_per_target_attributes):
                         
             base_entity, source_entity = random.choice(entity_name), random.choice(entity_name)
+            while entity_dict[base_entity][target_attribute] == entity_dict[source_entity][target_attribute]:
+                base_entity, source_entity = random.choice(entity_name), random.choice(entity_name)
             
             if source_entity in wikipedia_templates_dict.keys():
                 source_template_attribute = random.choice(all_attributes) if len(wikipedia_templates_dict[source_entity]) == 0 or not use_wikipedia_template else random.choice(all_attributes + ["wikipedia"])
@@ -330,6 +332,8 @@ def generate_ravel_dataset(
         for _ in range(sample_per_isolate_attributes):
                         
             base_entity, source_entity = random.choice(entity_name), random.choice(entity_name)
+            while entity_dict[base_entity][isolate_attribute] == entity_dict[source_entity][isolate_attribute]:
+                base_entity, source_entity = random.choice(entity_name), random.choice(entity_name)
             
             if source_entity in wikipedia_templates_dict.keys():
                 source_template_attribute = random.choice(all_attributes) if len(wikipedia_templates_dict[source_entity]) == 0 or not use_wikipedia_template else random.choice(all_attributes + ["wikipedia"])

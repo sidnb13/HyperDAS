@@ -390,10 +390,6 @@ def run_experiment(
 
     if log_wandb:
         wandb.finish()
-        
-    if save_dir is not None:
-        train_set.save_to_disk(os.path.join(save_dir, "train"))
-        test_set.save_to_disk(os.path.join(save_dir, "test"))
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -408,9 +404,9 @@ if __name__ == "__main__":
     parser.add_argument("--model_name_or_path", type=str, default="./models/llama3-8b")
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--save_dir", type=str, default=None)
-    parser.add_argument("--test_path", type=str, default="./experiments/ravel/data/ravel_sanity_check_test")
-    parser.add_argument("--train_path", type=str, default="./experiments/ravel/data/ravel_sanity_check_train")
-    parser.add_argument("--causal_loss_weight", type=float, default=4)
+    parser.add_argument("--test_path", type=str, default="./experiments/ravel/data/city_country_test")
+    parser.add_argument("--train_path", type=str, default="./experiments/ravel/data/city_country_train")
+    parser.add_argument("--causal_loss_weight", type=float, default=1)
     
     parser.add_argument("--intervention_location", type=str, choices=["last_token", "last_entity_token"], default="last_entity_token")
         
