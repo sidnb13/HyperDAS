@@ -171,11 +171,11 @@ class LlamaAttentionWithCrossAttention(LlamaAttention):
 class LlamaDecoderLayerWithDoubleCrossAttention(LlamaDecoderLayer):
     def __init__(self, config: LlamaConfig, layer_idx: int):
         super().__init__(config, layer_idx)
-        # self.source_cross_attn = LlamaAttentionWithCrossAttention(config=config, layer_idx=layer_idx, is_cross_attention=True)
-        # self.source_cross_attn_input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.source_cross_attn = LlamaAttentionWithCrossAttention(config=config, layer_idx=layer_idx, is_cross_attention=True)
+        self.source_cross_attn_input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         
-        # self.base_cross_attn = LlamaAttentionWithCrossAttention(config=config, layer_idx=layer_idx, is_cross_attention=True)
-        # self.base_cross_attn_input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.base_cross_attn = LlamaAttentionWithCrossAttention(config=config, layer_idx=layer_idx, is_cross_attention=True)
+        self.base_cross_attn_input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def forward(
         self,
@@ -227,7 +227,7 @@ class LlamaDecoderLayerWithDoubleCrossAttention(LlamaDecoderLayer):
             **kwargs,
         )
         hidden_states = residual + hidden_states
-        """        
+            
         residual = hidden_states
         hidden_states = self.source_cross_attn_input_layernorm(hidden_states)
         source_cross_attn_outputs, _, _ = self.source_cross_attn(
@@ -259,7 +259,7 @@ class LlamaDecoderLayerWithDoubleCrossAttention(LlamaDecoderLayer):
             **kwargs,
         )
         hidden_states = residual + base_cross_attn_outputs
-        """   
+           
         # Fully Connected
         residual = hidden_states
         hidden_states = self.post_attention_layernorm(hidden_states)

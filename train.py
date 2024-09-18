@@ -130,7 +130,7 @@ def run_experiment(
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--log_wandb", type=bool, default=False)
+    parser.add_argument("--log_wandb", type=bool, default=True)
     parser.add_argument("--wandb_project", type=str, default="HyperDAS")
     parser.add_argument("--wandb_run_name", type=str, default=None)
     parser.add_argument("--intervention_layer", type=int, default=12)
@@ -138,7 +138,7 @@ if __name__ == "__main__":
     parser.add_argument("--load_trained_from", type=str, default=None)
     
     parser.add_argument("--n_epochs", type=int, default=5)
-    parser.add_argument("--model_name_or_path", type=str, default="./models/llama3-8b")
+    parser.add_argument("--model_name_or_path", type=str, default="/nlp/scr/sjd24/llama3-8b")
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--source_suffix_visibility", default=False, action="store_true")
     parser.add_argument("--base_suffix_visibility", default=False, action="store_true")
@@ -148,14 +148,14 @@ if __name__ == "__main__":
     parser.add_argument("--source_selection_sparsity_loss", type=bool, default=True)
     parser.add_argument("--causal_loss_weight", type=float, default=1)
         
-    parser.add_argument('--inference_modes', nargs='+', default=["default", "column_argmax"])
+    parser.add_argument('--inference_modes', nargs='+', default=["default", "column_argmax", "bidding_argmax"])
     
     # if None, use Boundless DAS
     parser.add_argument('--subspace_module', default="ReflectSelect", choices=[None, "DAS", "BoundlessDAS", "MaskSelect", "ReflectSelect"])
     parser.add_argument("--das_dimension", type=int, default=128)
     parser.add_argument("--lr", type=float, default=3e-5)
     parser.add_argument("--weight_decay", type=float, default=0.01)
-    parser.add_argument("--eval_per_steps", type=int, default=250)
+    parser.add_argument("--eval_per_steps", type=int, default=100)
     parser.add_argument("--checkpoint_per_steps", type=int, default=None)
     
     args = parser.parse_args()

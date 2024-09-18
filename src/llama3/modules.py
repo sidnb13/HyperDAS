@@ -267,8 +267,6 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
             self.model.layers[i].self_attn.v_proj.weight = nn.Parameter(original_v_weights)
             self.model.layers[i].self_attn.o_proj.weight = nn.Parameter(original_o_weights)
             
-            
-            """
             self.model.layers[i].source_cross_attn.q_proj.weight = nn.Parameter(original_q_weights)
             self.model.layers[i].source_cross_attn.k_proj.weight = nn.Parameter(original_k_weights)
             self.model.layers[i].source_cross_attn.v_proj.weight = nn.Parameter(original_v_weights)
@@ -298,7 +296,7 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
                 self.model.layers[i].self_attn.k_proj.bias = nn.Parameter(original_k_bias)
                 self.model.layers[i].self_attn.v_proj.bias = nn.Parameter(original_v_bias)
                 self.model.layers[i].self_attn.o_proj.bias = nn.Parameter(original_o_bias)
-            """
+            
             
             self.model.layers[i].mlp.gate_proj.weight = nn.Parameter(original_mlp_gate_proj_weights)
             self.model.layers[i].mlp.up_proj.weight = nn.Parameter(original_mlp_up_proj_weights)
