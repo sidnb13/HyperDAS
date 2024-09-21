@@ -11,6 +11,7 @@ import os
 from tqdm import tqdm
 import time
 from typing import Any, List, Mapping, Optional, Tuple, TypeVar, Union
+import json
 
 from .layers import InterpretorUnembedCrossAttention, LlamaDecoderLayerWithDoubleCrossAttention
 from ..das_utils import BoundlessRotatedSpaceIntervention, RotatedSpaceIntervention, LowRankRotatedSpaceIntervention, SelectiveLowRankRotatedSpaceIntervention,ReflectiveLowRankRotatedSpaceIntervention
@@ -731,10 +732,25 @@ class RavelAblatedInterpretorHypernetwork(nn.Module):
                             / num_datapoints_in_epoch,
                         }
                     )
+        
+        result_dict = {}
+        for inference_mode in inference_modes:
+            accs, test_loss, correct_indices = self.eval_accuracy(test_loader, inference_mode=inference_mode, eval_n_label_tokens=3)
+            if inference_mode is None:
+                inference_mode = "default"
+            result_dict[inference_mode] = {
+                "accs": accs,
+                "test_loss": test_loss,
+                "correct_indices": correct_indices,
+            }
+            
+            for k, v in accs.items():
+                print(f"{inference_mode} {k}: {v}")
                     
         # Save the final model
         if save_dir is not None:
             self.save_model(os.path.join(save_dir, "final_model"))
+            json.dump(result_dict, open(os.path.join(save_dir, "final_result.json"), "w"))
 
 
 

@@ -15,8 +15,8 @@ import numpy as np
 import json
 from tqdm import tqdm
 from datasets import Dataset, load_from_disk
-from src.data_utils import get_ravel_collate_fn, generate_ravel_dataset_from_filtered
-from src.utils import add_fwd_hooks
+from src.hyperdas.data_utils import get_ravel_collate_fn, generate_ravel_dataset_from_filtered
+from src.hyperdas.utils import add_fwd_hooks
 import argparse
 from pyvene import IntervenableConfig, RepresentationConfig, LowRankRotatedSpaceIntervention, IntervenableModel, count_parameters
 

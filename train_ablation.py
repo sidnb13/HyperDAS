@@ -13,7 +13,7 @@ import numpy as np
 import json
 from tqdm import tqdm
 from datasets import Dataset, load_from_disk, concatenate_datasets
-from src.llama3.ablation import *
+from src.hyperdas.llama3.ablation import *
 import argparse
 
 

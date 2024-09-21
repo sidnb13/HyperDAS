@@ -13,7 +13,7 @@ import numpy as np
 import json
 from tqdm import tqdm
 from datasets import Dataset, load_from_disk
-from src.data_utils import get_ravel_collate_fn, generate_ravel_dataset_from_filtered
+from src.hyperdas.data_utils import get_ravel_collate_fn, generate_ravel_dataset_from_filtered
 import argparse
 
 
@@ -95,7 +95,7 @@ def run_experiment(
         test_set, batch_size=batch_size, collate_fn=collate_fn, shuffle=True
     )
 
-    from src.llama3.model import RavelInterpretorHypernetwork
+    from src.hyperdas.llama3.model import RavelInterpretorHypernetwork
 
     hypernetwork = RavelInterpretorHypernetwork(
         model_name_or_path=model_name_or_path,
@@ -131,7 +131,7 @@ def run_experiment(
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--log_wandb", type=bool, default=True)
+    parser.add_argument("--log_wandb", type=bool, default=False)
     parser.add_argument("--wandb_project", type=str, default="HyperDAS")
     parser.add_argument("--wandb_run_name", type=str, default=None)
     parser.add_argument("--intervention_layer", type=int, default=15)
@@ -144,8 +144,8 @@ if __name__ == "__main__":
     parser.add_argument("--source_suffix_visibility", default=False, action="store_true")
     parser.add_argument("--base_suffix_visibility", default=False, action="store_true")
     parser.add_argument("--save_dir", type=str, default=None)
-    parser.add_argument("--test_path", type=str, default="./experiments/ravel/data/city_country_test")
-    parser.add_argument("--train_path", type=str, default="./experiments/ravel/data/city_country_train")
+    parser.add_argument("--test_path", type=str, default="./experiments/RAVEL/data/city_country_test")
+    parser.add_argument("--train_path", type=str, default="./experiments/RAVEL/data/city_country_train")
     parser.add_argument("--source_selection_sparsity_loss", type=bool, default=True)
     parser.add_argument("--causal_loss_weight", type=float, default=1)
         

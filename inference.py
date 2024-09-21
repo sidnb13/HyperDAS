@@ -13,7 +13,7 @@ import numpy as np
 import json
 from tqdm import tqdm
 from datasets import Dataset, load_from_disk
-from src.data_utils import get_ravel_collate_fn, generate_ravel_dataset_from_filtered
+from src.hyperdas.data_utils import get_ravel_collate_fn, generate_ravel_dataset_from_filtered
 import argparse
 
 
@@ -57,7 +57,7 @@ def run_experiment(
         test_set, batch_size=batch_size, collate_fn=collate_fn, shuffle=True
     )
 
-    from src.llama3.model import RavelInterpretorHypernetwork
+    from src.hyperdas.llama3.model import RavelInterpretorHypernetwork
 
     hypernetwork = RavelInterpretorHypernetwork(
         model_name_or_path=model_name_or_path,
