@@ -44,8 +44,9 @@ def run_experiment(
     train_path=None,
     causal_loss_weight=1,
 ):
-    if save_dir is not None:
-        save_dir = os.path.join("./models", save_dir)
+    
+    """if save_dir is not None:
+        save_dir = os.path.join("./models", save_dir)"""
         
     
         
@@ -133,7 +134,7 @@ if __name__ == "__main__":
     parser.add_argument("--log_wandb", type=bool, default=True)
     parser.add_argument("--wandb_project", type=str, default="HyperDAS")
     parser.add_argument("--wandb_run_name", type=str, default=None)
-    parser.add_argument("--intervention_layer", type=int, default=12)
+    parser.add_argument("--intervention_layer", type=int, default=15)
     
     parser.add_argument("--load_trained_from", type=str, default=None)
     

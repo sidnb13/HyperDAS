@@ -28,6 +28,8 @@ def get_ravel_collate_fn(
         combined_decoded_input_ids = []
         
         if token_num > len(decoded_input_tokens):
+            print(decoded_input_tokens)
+            print(entity_text)
             raise ValueError("Entity text not found in input_ids, which is weird!")
         
         for i in range(len(decoded_input_tokens) - token_num + 1):
@@ -80,7 +82,7 @@ def get_ravel_collate_fn(
                 counterfactual_entity_token = counterfactual_entities[i]
                 
                 base_entity_position_ids.append(_find_entity_positions([tokenizer.decode(ids) for ids in input_ids], entity_token)[-1])
-                source_entity_position_ids.append(_find_entity_positions([tokenizer.decode(ids).strip() for ids in tokenized_counterfactual["input_ids"][i]], counterfactual_entity_token)[-1])
+                source_entity_position_ids.append(_find_entity_positions([tokenizer.decode(ids) for ids in tokenized_counterfactual["input_ids"][i]], counterfactual_entity_token)[-1])
             
             source_visibility_mask = tokenized_counterfactual["attention_mask"][i].clone()
             base_visibility_mask = tokenized["attention_mask"][i].clone()

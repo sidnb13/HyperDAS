@@ -44,11 +44,8 @@ def run_experiment(
     causal_loss_weight=1,
     intervention_location="last_entity_token",
 ):
-    if save_dir is not None:
-        save_dir = os.path.join("./models", save_dir)
-
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
         
     if log_wandb:
         wandb.init(
@@ -384,9 +381,18 @@ def run_experiment(
                         / num_datapoints_in_epoch,
                     }
                 )
-                
+    
+    accuracies = eval_accuracy(
+        test_data_loader, eval_n_label_tokens=3
+    )
+    for k, v in accuracies.items():
+        print(f"{k}: {v}")
+    
     if save_dir is not None:
         torch.save(intervenable.interventions[inv_keys][0].state_dict(), os.path.join(save_dir, "final_das_module.pt"))
+        json.dump(accuracies, open(os.path.join(save_dir, "final_accuracies.json"), "w"))
+        
+        
 
     if log_wandb:
         wandb.finish()
@@ -394,18 +400,18 @@ def run_experiment(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--log_wandb", type=bool, default=False)
-    parser.add_argument("--wandb_project", type=str, default="hypernetworks-interpretor-mdas")
+    parser.add_argument("--wandb_project", type=str, default="HyperDAS")
     parser.add_argument("--wandb_run_name", type=str, default=None)
-    parser.add_argument("--intervention_layer", type=int, default=12)
+    parser.add_argument("--intervention_layer", type=int, default=15)
     
     parser.add_argument("--load_trained_from", type=str, default=None)
     
     parser.add_argument("--n_epochs", type=int, default=5)
-    parser.add_argument("--model_name_or_path", type=str, default="./models/llama3-8b")
+    parser.add_argument("--model_name_or_path", type=str, default="/nlp/scr/sjd24/llama3-8b")
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--save_dir", type=str, default=None)
-    parser.add_argument("--test_path", type=str, default="./experiments/ravel/data/city_country_test")
-    parser.add_argument("--train_path", type=str, default="./experiments/ravel/data/city_country_train")
+    parser.add_argument("--test_path", type=str, default="./experiments/ravel/data/nobel_prize_winner_field_test")
+    parser.add_argument("--train_path", type=str, default="./experiments/ravel/data/nobel_prize_winner_field_train")
     parser.add_argument("--causal_loss_weight", type=float, default=1)
     
     parser.add_argument("--intervention_location", type=str, choices=["last_token", "last_entity_token"], default="last_entity_token")

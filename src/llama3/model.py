@@ -68,6 +68,9 @@ class RavelInterpretorHypernetwork(nn.Module):
         self.interpretor.hypernetwork.load_state_dict(torch.load(os.path.join(load_dir, "hypernetwork.pt")))
         if self.use_das_intervention:
             self.interpretor.das_module.load_state_dict(torch.load(os.path.join(load_dir, "das.pt")))
+            
+    def set_intervention_layer(self, intervention_layer):
+        self.interpretor.config.intervention_layer = intervention_layer
         
     def forward(
         self,

@@ -491,7 +491,7 @@ class LlamaInterpretor(nn.Module):
         
                 
         if intervention_layer is None:
-            intervention_layer = self.config.intervention_layer     
+            intervention_layer = self.config.intervention_layer 
             
         if base_position_ids is None:
             # 0 for all the padding tokens and start from 1 for the rest
