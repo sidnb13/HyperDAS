@@ -79,6 +79,9 @@ def run_experiment(
 
     train_set = load_from_disk(train_path)
     test_set = load_from_disk(test_path)
+    
+    # train_set = Dataset.from_list([d for d in train_set if d["attribute_type"] == "causal"])
+    # test_set = Dataset.from_list([d for d in test_set if d["attribute_type"] == "causal"])
                 
     collate_fn = get_ravel_collate_fn(
         tokenizer, 
@@ -138,25 +141,25 @@ if __name__ == "__main__":
     
     parser.add_argument("--load_trained_from", type=str, default=None)
     
-    parser.add_argument("--n_epochs", type=int, default=5)
+    parser.add_argument("--n_epochs", type=int, default=10)
     parser.add_argument("--model_name_or_path", type=str, default="/nlp/scr/sjd24/llama3-8b")
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--source_suffix_visibility", default=False, action="store_true")
     parser.add_argument("--base_suffix_visibility", default=False, action="store_true")
     parser.add_argument("--save_dir", type=str, default=None)
-    parser.add_argument("--test_path", type=str, default="./experiments/RAVEL/data/city_country_test")
-    parser.add_argument("--train_path", type=str, default="./experiments/RAVEL/data/city_country_train")
+    parser.add_argument("--test_path", type=str, default="./experiments/RAVEL/data/city_test")
+    parser.add_argument("--train_path", type=str, default="./experiments/RAVEL/data/city_train")
     parser.add_argument("--source_selection_sparsity_loss", type=bool, default=True)
-    parser.add_argument("--causal_loss_weight", type=float, default=1)
+    parser.add_argument("--causal_loss_weight", type=float, default=10)
         
-    parser.add_argument('--inference_modes', nargs='+', default=["default", "column_argmax", "bidding_argmax"])
+    parser.add_argument('--inference_modes', nargs='+', default=["default", "bidding_argmax"])
     
     # if None, use Boundless DAS
     parser.add_argument('--subspace_module', default="ReflectSelect", choices=[None, "DAS", "BoundlessDAS", "MaskSelect", "ReflectSelect"])
     parser.add_argument("--das_dimension", type=int, default=128)
-    parser.add_argument("--lr", type=float, default=3e-5)
+    parser.add_argument("--lr", type=float, default=2e-5)
     parser.add_argument("--weight_decay", type=float, default=0.01)
-    parser.add_argument("--eval_per_steps", type=int, default=100)
+    parser.add_argument("--eval_per_steps", type=int, default=4000)
     parser.add_argument("--checkpoint_per_steps", type=int, default=None)
     
     args = parser.parse_args()

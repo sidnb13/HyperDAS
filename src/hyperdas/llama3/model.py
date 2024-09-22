@@ -41,6 +41,10 @@ class RavelInterpretorHypernetwork(nn.Module):
             das_dimension=das_dimension,
         )
         self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+        
+        self.tokenizer.padding_side = "left"
+        self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
 
         self.use_das_intervention = subspace_module != None
         self.das_dim = das_dimension
@@ -136,6 +140,7 @@ class RavelInterpretorHypernetwork(nn.Module):
                 loss_weight = loss_weight[label_indices]
                 criterion = torch.nn.CrossEntropyLoss(reduction="none")
                 loss = criterion(log_prob_predictions, labels.long())
+                
                 loss = (loss * loss_weight).mean()
                 
             _pred["loss"] = loss
@@ -225,7 +230,8 @@ class RavelInterpretorHypernetwork(nn.Module):
         batch_size=4, 
         inference_mode=None, 
         annot=True,
-        indicate_masked_tokens=False
+        indicate_masked_tokens=False,
+        digits=2
     ):
         batch_id = idxs // batch_size
         example_id = idxs % batch_size
@@ -241,24 +247,63 @@ class RavelInterpretorHypernetwork(nn.Module):
         source_input_ids = batch["source_input_ids"][example_id]
         intervention_weight = results["batch_intervention_weight"][example_id]
         label = batch["labels"][example_id]
+        
 
         assert intervention_weight.size() == (len(source_input_ids) + 1, len(base_input_ids))
+        
+        source_padding_idx = source_input_ids == self.tokenizer.pad_token_id
+        base_padding_idx = base_input_ids == self.tokenizer.pad_token_id
+        
+        source_input_ids = source_input_ids[~source_padding_idx]
+        base_input_ids = base_input_ids[~base_padding_idx]
+        
+        if indicate_masked_tokens:
+            base_intervention_mask = batch["base_intervention_mask"][example_id]
+            source_intervention_mask = batch["source_intervention_mask"][example_id]
+            base_intervention_mask = base_intervention_mask[~base_padding_idx]
+            source_intervention_mask = source_intervention_mask[~source_padding_idx]
+            source_intervention_mask = torch.cat([source_intervention_mask, torch.tensor([True])])
+                    
+        # Add a False value to the end of the source_padding_idx to account for the [SELF] token
+        source_padding_idx = torch.cat([source_padding_idx, torch.tensor([False])])
+        intervention_weight = intervention_weight[~source_padding_idx, :]
+        intervention_weight = intervention_weight[:, ~base_padding_idx]
 
         source_axis = [self.tokenizer.decode([i]) for i in source_input_ids] + ["[SELF]"]
         base_axis = [self.tokenizer.decode([i]) for i in base_input_ids]
         editor_text = self.tokenizer.decode(editor_input_ids, skip_special_tokens=True)
         label = label[label != -100]
         label = self.tokenizer.decode(label)
+        
+        # set background color to be grey
+        
+        style = sns.axes_style("dark")
+        style["axes.facecolor"] = "#100a17"
+        
+        sns.set(style=style)
 
-        _, ax = plt.subplots(figsize=(15, 15))
-       
-        plot = sns.heatmap(intervention_weight.float().cpu().numpy(), xticklabels=base_axis, yticklabels=source_axis, ax=ax, annot=annot, fmt=".2f")
-
+        fig, ax = plt.subplots(figsize=(15, 15))
+            
+        if indicate_masked_tokens:
+            masks = torch.ones_like(intervention_weight)
+            
+            for i, source_mask in enumerate(source_intervention_mask):
+                for j, base_mask in enumerate(base_intervention_mask):
+                    if source_mask and base_mask:
+                        masks[i, j] = False
+            # masks[:, base_intervention_mask] = 0.0
+            masks = masks.float().cpu().numpy()
+        else:
+            masks = None
+        plot = sns.heatmap(intervention_weight.float().cpu().numpy(), xticklabels=base_axis, yticklabels=source_axis, ax=ax, annot=annot, fmt=f".{digits}f", mask=masks)
+        
+        # Render the cell at (0, 0) with black background
+            
         ax.set_title(f"Instruction: {editor_text}     Label: {label}    Pred: {results['batch_output'][example_id]}")
         ax.set_xlabel("Base Sentence Tokens")
         ax.set_ylabel("Source Sentence Tokens")
         
-        return plot, ax
+        return plot, (fig, ax)
         
         
     def eval_accuracy(self, test_loader, inference_mode=None, eval_n_label_tokens=None):
