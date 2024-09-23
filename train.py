@@ -45,7 +45,9 @@ def run_experiment(
     train_path=None,
     causal_loss_weight=1,
     num_decoders=8,
-    initialize_from_scratch=False
+    initialize_from_scratch=False,
+    ablate_base_token_attention=False,
+    ablate_source_token_attention=False,
 ):
     
     """if save_dir is not None:
@@ -110,7 +112,9 @@ def run_experiment(
         subspace_module=subspace_module,
         das_dimension=das_dimension,
         chop_editor_at_layer=num_decoders,
-        initialize_from_scratch=initialize_from_scratch
+        initialize_from_scratch=initialize_from_scratch,
+        ablate_base_token_attention=ablate_base_token_attention,
+        ablate_source_token_attention=ablate_source_token_attention,
     )
 
     hypernetwork = hypernetwork.to("cuda")
@@ -148,7 +152,7 @@ if __name__ == "__main__":
     parser.add_argument("--load_trained_from", type=str, default=None)
     
     parser.add_argument("--n_epochs", type=int, default=10)
-    parser.add_argument("--model_name_or_path", type=str, default="./models/llama3-8b")
+    parser.add_argument("--model_name_or_path", type=str, default="/nlp/scr/sjd24/llama3-8b")
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--source_suffix_visibility", default=False, action="store_true")
     parser.add_argument("--base_suffix_visibility", default=False, action="store_true")
@@ -161,8 +165,11 @@ if __name__ == "__main__":
         
     parser.add_argument('--inference_modes', nargs='+', default=["default", "bidding_argmax"])
     
+    # Ablation
     parser.add_argument("--num_decoders", type=int, default=2)
     parser.add_argument("--initialize_from_scratch", default=False, action="store_true")
+    parser.add_argument("--ablate_base_token_attention", default=False, action="store_true")
+    parser.add_argument("--ablate_source_token_attention", default=False, action="store_true")
     
     # if None, use Boundless DAS
     parser.add_argument('--subspace_module', default="ReflectSelect", choices=[None, "DAS", "BoundlessDAS", "MaskSelect", "ReflectSelect"])

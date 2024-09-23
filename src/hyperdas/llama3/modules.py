@@ -43,6 +43,8 @@ class LlamaInterpretorConfig(LlamaConfig):
     compute_position_ids: bool = True
     intervention_layer: int = 24
     initialize_from_scratch: bool = False
+    ablate_base_token_attention: bool = False
+    ablate_source_token_attention: bool = False
     
 
 class LlamaModelWithCrossAttention(LlamaModel):
@@ -269,31 +271,38 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
                 self.model.layers[i].self_attn.v_proj.weight = nn.Parameter(original_v_weights)
                 self.model.layers[i].self_attn.o_proj.weight = nn.Parameter(original_o_weights)
                 
-                self.model.layers[i].source_cross_attn.q_proj.weight = nn.Parameter(original_q_weights)
-                self.model.layers[i].source_cross_attn.k_proj.weight = nn.Parameter(original_k_weights)
-                self.model.layers[i].source_cross_attn.v_proj.weight = nn.Parameter(original_v_weights)
-                self.model.layers[i].source_cross_attn.o_proj.weight = nn.Parameter(original_o_weights)
-                self.model.layers[i].source_cross_attn_input_layernorm.weight = nn.Parameter(original_input_layernorm_weights)
+                if not config.ablate_source_token_attention:
+                    self.model.layers[i].source_cross_attn.q_proj.weight = nn.Parameter(original_q_weights)
+                    self.model.layers[i].source_cross_attn.k_proj.weight = nn.Parameter(original_k_weights)
+                    self.model.layers[i].source_cross_attn.v_proj.weight = nn.Parameter(original_v_weights)
+                    self.model.layers[i].source_cross_attn.o_proj.weight = nn.Parameter(original_o_weights)
+                    self.model.layers[i].source_cross_attn_input_layernorm.weight = nn.Parameter(original_input_layernorm_weights)
                 
-                self.model.layers[i].base_cross_attn.q_proj.weight = nn.Parameter(original_q_weights)
-                self.model.layers[i].base_cross_attn.k_proj.weight = nn.Parameter(original_k_weights)
-                self.model.layers[i].base_cross_attn.v_proj.weight = nn.Parameter(original_v_weights)
-                self.model.layers[i].base_cross_attn.o_proj.weight = nn.Parameter(original_o_weights)
-                self.model.layers[i].base_cross_attn_input_layernorm.weight = nn.Parameter(original_input_layernorm_weights)
+                if not config.ablate_base_token_attention:
+                    self.model.layers[i].base_cross_attn.q_proj.weight = nn.Parameter(original_q_weights)
+                    self.model.layers[i].base_cross_attn.k_proj.weight = nn.Parameter(original_k_weights)
+                    self.model.layers[i].base_cross_attn.v_proj.weight = nn.Parameter(original_v_weights)
+                    self.model.layers[i].base_cross_attn.o_proj.weight = nn.Parameter(original_o_weights)
+                    self.model.layers[i].base_cross_attn_input_layernorm.weight = nn.Parameter(original_input_layernorm_weights)
                 
                 if config.attention_bias:
                     original_q_bias = layer.self_attn.q_proj.bias
                     original_k_bias = layer.self_attn.k_proj.bias
                     original_v_bias = layer.self_attn.v_proj.bias
                     original_o_bias = layer.self_attn.o_proj.bias
-                    self.model.layers[i].source_cross_attn.q_proj.bias = nn.Parameter(original_q_bias)
-                    self.model.layers[i].source_cross_attn.k_proj.bias = nn.Parameter(original_k_bias)
-                    self.model.layers[i].source_cross_attn.v_proj.bias = nn.Parameter(original_v_bias)
-                    self.model.layers[i].source_cross_attn.o_proj.bias = nn.Parameter(original_o_bias)
-                    self.model.layers[i].base_cross_attn.q_proj.bias = nn.Parameter(original_q_bias)
-                    self.model.layers[i].base_cross_attn.k_proj.bias = nn.Parameter(original_k_bias)
-                    self.model.layers[i].base_cross_attn.v_proj.bias = nn.Parameter(original_v_bias)
-                    self.model.layers[i].base_cross_attn.o_proj.bias = nn.Parameter(original_o_bias)
+                    
+                    if not config.ablate_source_token_attention:
+                        self.model.layers[i].source_cross_attn.q_proj.bias = nn.Parameter(original_q_bias)
+                        self.model.layers[i].source_cross_attn.k_proj.bias = nn.Parameter(original_k_bias)
+                        self.model.layers[i].source_cross_attn.v_proj.bias = nn.Parameter(original_v_bias)
+                        self.model.layers[i].source_cross_attn.o_proj.bias = nn.Parameter(original_o_bias)
+                    
+                    if not config.ablate_base_token_attention:
+                        self.model.layers[i].base_cross_attn.q_proj.bias = nn.Parameter(original_q_bias)
+                        self.model.layers[i].base_cross_attn.k_proj.bias = nn.Parameter(original_k_bias)
+                        self.model.layers[i].base_cross_attn.v_proj.bias = nn.Parameter(original_v_bias)
+                        self.model.layers[i].base_cross_attn.o_proj.bias = nn.Parameter(original_o_bias)
+                        
                     self.model.layers[i].self_attn.q_proj.bias = nn.Parameter(original_q_bias)
                     self.model.layers[i].self_attn.k_proj.bias = nn.Parameter(original_k_bias)
                     self.model.layers[i].self_attn.v_proj.bias = nn.Parameter(original_v_bias)
@@ -416,7 +425,6 @@ class LlamaInterpretor(nn.Module):
             param.requires_grad = False
 
         assign_layer_indices(self.target_model)
-        print(self.hypernetwork.model.layers)
 
         """if config.use_layerwise_embeddings:
             # extra layer is cross-attn in the lm_head

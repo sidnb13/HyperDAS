@@ -25,6 +25,8 @@ class RavelInterpretorHypernetwork(nn.Module):
         torch_dtype=torch.bfloat16,
         das_dimension=None,
         initialize_from_scratch=False,
+        ablate_base_token_attention=False,
+        ablate_source_token_attention=False,
     ):
         super().__init__()
 
@@ -36,6 +38,9 @@ class RavelInterpretorHypernetwork(nn.Module):
         self.interpretor_config.intervention_layer = intervention_layer
         self.interpretor_config._attn_implementation = 'eager'
         self.interpretor_config.initialize_from_scratch = initialize_from_scratch
+        self.interpretor_config.ablate_base_token_attention = ablate_base_token_attention
+        self.interpretor_config.ablate_source_token_attention = ablate_source_token_attention
+        
         
         self.interpretor = LlamaInterpretor(
             self.interpretor_config, 

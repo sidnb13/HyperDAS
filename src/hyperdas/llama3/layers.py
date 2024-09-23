@@ -171,11 +171,18 @@ class LlamaAttentionWithCrossAttention(LlamaAttention):
 class LlamaDecoderLayerWithDoubleCrossAttention(LlamaDecoderLayer):
     def __init__(self, config: LlamaConfig, layer_idx: int):
         super().__init__(config, layer_idx)
-        self.source_cross_attn = LlamaAttentionWithCrossAttention(config=config, layer_idx=layer_idx, is_cross_attention=True)
-        self.source_cross_attn_input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         
-        self.base_cross_attn = LlamaAttentionWithCrossAttention(config=config, layer_idx=layer_idx, is_cross_attention=True)
-        self.base_cross_attn_input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.ablate_base_token_attention = config.ablate_base_token_attention
+        self.ablate_source_token_attention = config.ablate_source_token_attention
+        
+        if not self.ablate_base_token_attention:
+            self.source_cross_attn = LlamaAttentionWithCrossAttention(config=config, layer_idx=layer_idx, is_cross_attention=True)
+            self.source_cross_attn_input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        
+        if not self.ablate_source_token_attention:
+            self.base_cross_attn = LlamaAttentionWithCrossAttention(config=config, layer_idx=layer_idx, is_cross_attention=True)
+            self.base_cross_attn_input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+
 
     def forward(
         self,
@@ -227,38 +234,40 @@ class LlamaDecoderLayerWithDoubleCrossAttention(LlamaDecoderLayer):
             **kwargs,
         )
         hidden_states = residual + hidden_states
-            
-        residual = hidden_states
-        hidden_states = self.source_cross_attn_input_layernorm(hidden_states)
-        source_cross_attn_outputs, _, _ = self.source_cross_attn(
-            hidden_states=hidden_states,
-            attention_mask=attention_mask,
-            encoder_hidden_states=source_hidden_states,
-            encoder_attention_mask=source_attention_mask,
-            position_ids=position_ids,
-            past_key_value=past_key_value,
-            output_attentions=output_attentions,
-            use_cache=use_cache,
-            cache_position=cache_position,
-            **kwargs,
-        )
-        hidden_states = residual + source_cross_attn_outputs
+        
+        if source_hidden_states is not None and not self.ablate_source_token_attention:
+            residual = hidden_states
+            hidden_states = self.source_cross_attn_input_layernorm(hidden_states)
+            source_cross_attn_outputs, _, _ = self.source_cross_attn(
+                hidden_states=hidden_states,
+                attention_mask=attention_mask,
+                encoder_hidden_states=source_hidden_states,
+                encoder_attention_mask=source_attention_mask,
+                position_ids=position_ids,
+                past_key_value=past_key_value,
+                output_attentions=output_attentions,
+                use_cache=use_cache,
+                cache_position=cache_position,
+                **kwargs,
+            )
+            hidden_states = residual + source_cross_attn_outputs
 
-        residual = hidden_states
-        hidden_states = self.base_cross_attn_input_layernorm(hidden_states)
-        base_cross_attn_outputs, _, _ = self.base_cross_attn(
-            hidden_states=hidden_states,
-            attention_mask=attention_mask,
-            encoder_hidden_states=base_hidden_states,
-            encoder_attention_mask=base_attention_mask,
-            position_ids=position_ids,
-            past_key_value=past_key_value,
-            output_attentions=output_attentions,
-            use_cache=use_cache,
-            cache_position=cache_position,
-            **kwargs,
-        )
-        hidden_states = residual + base_cross_attn_outputs
+        if base_hidden_states is not None and not self.ablate_base_token_attention:
+            residual = hidden_states
+            hidden_states = self.base_cross_attn_input_layernorm(hidden_states)
+            base_cross_attn_outputs, _, _ = self.base_cross_attn(
+                hidden_states=hidden_states,
+                attention_mask=attention_mask,
+                encoder_hidden_states=base_hidden_states,
+                encoder_attention_mask=base_attention_mask,
+                position_ids=position_ids,
+                past_key_value=past_key_value,
+                output_attentions=output_attentions,
+                use_cache=use_cache,
+                cache_position=cache_position,
+                **kwargs,
+            )
+            hidden_states = residual + base_cross_attn_outputs
            
         # Fully Connected
         residual = hidden_states
