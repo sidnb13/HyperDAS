@@ -59,7 +59,6 @@ class RavelInterpretorHypernetwork(nn.Module):
         self.boundary_lr = 1e-2
         self.das_temperature_start = 50.0
         self.das_temperature_end = 0.1
-        self.source_sparsity_loss_weight= 0.25
         
     def save_model(self, save_dir):
         if not os.path.exists(save_dir):
@@ -444,6 +443,7 @@ class RavelInterpretorHypernetwork(nn.Module):
         eval_per_steps: int = None,
         checkpoint_per_steps: int = None,
         apply_source_selection_sparsity_loss=False,
+        sparsity_loss_weight=0.25,
         causal_loss_weight=1.0,
         lr=3e-4,
         weight_decay=0.01,
@@ -559,7 +559,7 @@ class RavelInterpretorHypernetwork(nn.Module):
                         ).sum(dim=-1)
                         batch_source_selection_loss = source_selection_loss.mean()
                         
-                        training_loss += self.source_sparsity_loss_weight * batch_source_selection_loss
+                        training_loss += sparsity_loss_weight * batch_source_selection_loss
                     
                     training_loss.backward()
                     nn.utils.clip_grad_norm_(
