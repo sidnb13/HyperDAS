@@ -43,6 +43,8 @@ def run_experiment(
     test_path=None,
     train_path=None,
     causal_loss_weight=1,
+    num_decoders=8,
+    initialize_from_scratch=False
 ):
     
     """if save_dir is not None:
@@ -106,6 +108,8 @@ def run_experiment(
         intervention_layer=intervention_layer,
         subspace_module=subspace_module,
         das_dimension=das_dimension,
+        chop_editor_at_layer=num_decoders,
+        initialize_from_scratch=initialize_from_scratch
     )
 
     hypernetwork = hypernetwork.to("cuda")
@@ -153,6 +157,9 @@ if __name__ == "__main__":
     parser.add_argument("--causal_loss_weight", type=float, default=10)
         
     parser.add_argument('--inference_modes', nargs='+', default=["default", "bidding_argmax"])
+    
+    parser.add_argument("--num_decoders", type=int, default=8)
+    parser.add_argument("--initialize_from_scratch", default=False, action="store_true")
     
     # if None, use Boundless DAS
     parser.add_argument('--subspace_module', default="ReflectSelect", choices=[None, "DAS", "BoundlessDAS", "MaskSelect", "ReflectSelect"])

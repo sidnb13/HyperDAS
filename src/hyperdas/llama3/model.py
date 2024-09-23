@@ -24,6 +24,7 @@ class RavelInterpretorHypernetwork(nn.Module):
         subspace_module="ReflectSelect",
         torch_dtype=torch.bfloat16,
         das_dimension=None,
+        initialize_from_scratch=False,
     ):
         super().__init__()
 
@@ -34,7 +35,8 @@ class RavelInterpretorHypernetwork(nn.Module):
         self.interpretor_config.chop_editor_at_layer = chop_editor_at_layer
         self.interpretor_config.intervention_layer = intervention_layer
         self.interpretor_config._attn_implementation = 'eager'
-                
+        self.interpretor_config.initialize_from_scratch = initialize_from_scratch
+        
         self.interpretor = LlamaInterpretor(
             self.interpretor_config, 
             subspace_module=subspace_module, 
