@@ -33,6 +33,7 @@ def run_experiment(
     source_suffix_visibility=False,
     base_suffix_visibility=False,
     source_selection_sparsity_loss=True,
+    sparsity_loss_weight=0.25,
     save_dir=None,
     n_epochs=1,
     das_dimension=None,
@@ -43,6 +44,8 @@ def run_experiment(
     test_path=None,
     train_path=None,
     causal_loss_weight=1,
+    num_decoders=8,
+    initialize_from_scratch=False
 ):
     
     """if save_dir is not None:
@@ -106,6 +109,8 @@ def run_experiment(
         intervention_layer=intervention_layer,
         subspace_module=subspace_module,
         das_dimension=das_dimension,
+        chop_editor_at_layer=num_decoders,
+        initialize_from_scratch=initialize_from_scratch
     )
 
     hypernetwork = hypernetwork.to("cuda")
@@ -123,6 +128,7 @@ def run_experiment(
         eval_per_steps = eval_per_steps,
         save_dir=save_dir,
         apply_source_selection_sparsity_loss=source_selection_sparsity_loss,
+        sparsity_loss_weight=sparsity_loss_weight,
         causal_loss_weight=causal_loss_weight,
         weight_decay=weight_decay, 
         lr=lr
@@ -147,12 +153,16 @@ if __name__ == "__main__":
     parser.add_argument("--source_suffix_visibility", default=False, action="store_true")
     parser.add_argument("--base_suffix_visibility", default=False, action="store_true")
     parser.add_argument("--save_dir", type=str, default=None)
-    parser.add_argument("--test_path", type=str, default="./experiments/RAVEL/data/city_test")
-    parser.add_argument("--train_path", type=str, default="./experiments/RAVEL/data/city_train")
+    parser.add_argument("--test_path", type=str, default="./experiments/RAVEL/data/city_country_test")
+    parser.add_argument("--train_path", type=str, default="./experiments/RAVEL/data/city_country_train")
     parser.add_argument("--source_selection_sparsity_loss", type=bool, default=True)
+    parser.add_argument("--sparsity_loss_weight", type=float, default=1.5)
     parser.add_argument("--causal_loss_weight", type=float, default=10)
         
     parser.add_argument('--inference_modes', nargs='+', default=["default", "bidding_argmax"])
+    
+    parser.add_argument("--num_decoders", type=int, default=2)
+    parser.add_argument("--initialize_from_scratch", default=False, action="store_true")
     
     # if None, use Boundless DAS
     parser.add_argument('--subspace_module', default="ReflectSelect", choices=[None, "DAS", "BoundlessDAS", "MaskSelect", "ReflectSelect"])
