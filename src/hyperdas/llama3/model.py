@@ -231,7 +231,8 @@ class RavelInterpretorHypernetwork(nn.Module):
         inference_mode=None, 
         annot=True,
         indicate_masked_tokens=False,
-        digits=2
+        digits=2,
+        contain_title=True
     ):
         batch_id = idxs // batch_size
         example_id = idxs % batch_size
@@ -240,16 +241,11 @@ class RavelInterpretorHypernetwork(nn.Module):
             if i == batch_id:
                 break
             
-        results = self.inspect_batch_prediction_ouptuts(batch, inference_mode=inference_mode, eval_n_label_tokens=3)
-
+        plot_multiple_modes = type(inference_mode) == list and len(inference_mode) > 1
         editor_input_ids = batch["editor_input_ids"][example_id]
         base_input_ids = batch["base_input_ids"][example_id]
         source_input_ids = batch["source_input_ids"][example_id]
-        intervention_weight = results["batch_intervention_weight"][example_id]
         label = batch["labels"][example_id]
-        
-
-        assert intervention_weight.size() == (len(source_input_ids) + 1, len(base_input_ids))
         
         source_padding_idx = source_input_ids == self.tokenizer.pad_token_id
         base_padding_idx = base_input_ids == self.tokenizer.pad_token_id
@@ -265,45 +261,102 @@ class RavelInterpretorHypernetwork(nn.Module):
             source_intervention_mask = torch.cat([source_intervention_mask, torch.tensor([True])])
                     
         # Add a False value to the end of the source_padding_idx to account for the [SELF] token
-        source_padding_idx = torch.cat([source_padding_idx, torch.tensor([False])])
-        intervention_weight = intervention_weight[~source_padding_idx, :]
-        intervention_weight = intervention_weight[:, ~base_padding_idx]
-
+        intervention_weight_source_padding_idx = torch.cat([source_padding_idx, torch.tensor([False])])
+        
         source_axis = [self.tokenizer.decode([i]) for i in source_input_ids] + ["[SELF]"]
         base_axis = [self.tokenizer.decode([i]) for i in base_input_ids]
+        
+        for axis in [source_axis, base_axis]:
+            for i, token in enumerate(axis):
+                if token == self.tokenizer.bos_token:
+                    axis[i] = "[BOS]"
+        
         editor_text = self.tokenizer.decode(editor_input_ids, skip_special_tokens=True)
         label = label[label != -100]
         label = self.tokenizer.decode(label)
+    
+        def plot_inference_model(
+            ax, intervention_weight, prediction
+        ):
+            if indicate_masked_tokens:
+                masks = torch.ones_like(intervention_weight)
+                
+                for i, source_mask in enumerate(source_intervention_mask):
+                    for j, base_mask in enumerate(base_intervention_mask):
+                        if source_mask and base_mask:
+                            masks[i, j] = False
+                # masks[:, base_intervention_mask] = 0.0
+                masks = masks.float().cpu().numpy()
+            else:
+                masks = None
+            sns.heatmap(intervention_weight.float().cpu().numpy(), xticklabels=base_axis, yticklabels=source_axis, ax=ax, annot=annot, fmt=f".{digits}f", mask=masks)
+            
+            # Render the cell at (0, 0) with black background
+            
+            if contain_title:
+                ax.set_title(f"Instruction: {editor_text}     Label: {label}    Pred: {prediction}")
+            else:
+                print(f"Instruction: {editor_text}     Label: {label}    Pred: {prediction}")
+                
+            ax.set_xlabel("Base Sentence Tokens")
+            ax.set_ylabel("Source Sentence Tokens")
+            
+        def process_intervention_weight(intervention_weight):
+            intervention_weight = intervention_weight[~intervention_weight_source_padding_idx, :]
+            intervention_weight = intervention_weight[:, ~base_padding_idx]
+            return intervention_weight
+        
+        
+        if not plot_multiple_modes:
+            inference_mode = inference_mode if type(inference_mode) != list else inference_mode[0]
+            results = self.inspect_batch_prediction_ouptuts(batch, inference_mode=inference_mode, eval_n_label_tokens=3)
+            predictions = results['batch_output'][example_id]
+            intervention_weight = results["batch_intervention_weight"][example_id]
+        else:
+            results = []
+            for mode in inference_mode:
+                result = self.inspect_batch_prediction_ouptuts(batch, inference_mode=mode, eval_n_label_tokens=3)
+                results.append(result)
+            
+            predictions = [r['batch_output'][example_id] for r in results]
+            intervention_weight = [r["batch_intervention_weight"][example_id] for r in results]
         
         # set background color to be grey
+        if plot_multiple_modes:
+            style = sns.axes_style("dark")
+            style["axes.facecolor"] = "#100a17"
         
-        style = sns.axes_style("dark")
-        style["axes.facecolor"] = "#100a17"
-        
-        sns.set(style=style)
-
-        fig, ax = plt.subplots(figsize=(15, 15))
-            
-        if indicate_masked_tokens:
-            masks = torch.ones_like(intervention_weight)
-            
-            for i, source_mask in enumerate(source_intervention_mask):
-                for j, base_mask in enumerate(base_intervention_mask):
-                    if source_mask and base_mask:
-                        masks[i, j] = False
-            # masks[:, base_intervention_mask] = 0.0
-            masks = masks.float().cpu().numpy()
+            sns.set(style=style, font_scale=3)
+            intervention_weight = [process_intervention_weight(iw) for iw in intervention_weight]
+            fig, axes = plt.subplots(1, len(inference_mode), figsize=(10 + 15 * len(inference_mode), 15))
+            for i, ax in enumerate(axes):
+                plot_inference_model(
+                    ax=ax,
+                    intervention_weight=intervention_weight.pop(0),
+                    prediction=predictions.pop(0)
+                )
+                
+                if i != 0:
+                    ax.set_ylabel("") # remove y-axis label for all but the first plot
+                
+                if i != len(axes) - 1:
+                    # remove the heatmap colorbar for all but the last plot
+                    ax.collections[0].colorbar.remove()
+                    
         else:
-            masks = None
-        plot = sns.heatmap(intervention_weight.float().cpu().numpy(), xticklabels=base_axis, yticklabels=source_axis, ax=ax, annot=annot, fmt=f".{digits}f", mask=masks)
-        
-        # Render the cell at (0, 0) with black background
+            style = sns.axes_style("dark")
+            style["axes.facecolor"] = "#100a17"
             
-        ax.set_title(f"Instruction: {editor_text}     Label: {label}    Pred: {results['batch_output'][example_id]}")
-        ax.set_xlabel("Base Sentence Tokens")
-        ax.set_ylabel("Source Sentence Tokens")
+            sns.set(style=style)
+            intervention_weight = process_intervention_weight(intervention_weight)
+            fig, axes = plt.subplots(figsize=(15, 15))
+            plot_inference_model(
+                ax=axes,
+                intervention_weight=intervention_weight,
+                prediction=predictions
+            )
         
-        return plot, (fig, ax)
+        return fig, axes
         
         
     def eval_accuracy(self, test_loader, inference_mode=None, eval_n_label_tokens=None):
