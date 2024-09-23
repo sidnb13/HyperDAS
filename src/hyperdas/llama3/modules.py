@@ -416,6 +416,7 @@ class LlamaInterpretor(nn.Module):
             param.requires_grad = False
 
         assign_layer_indices(self.target_model)
+        print(self.hypernetwork.model.layers)
 
         """if config.use_layerwise_embeddings:
             # extra layer is cross-attn in the lm_head
