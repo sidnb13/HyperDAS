@@ -456,7 +456,8 @@ class RavelInterpretorHypernetwork(nn.Module):
         lr=3e-4,
         weight_decay=0.01,
         save_dir=None,
-        save_model=False
+        save_model=False,
+        schedule_sparsity_loss=True,
     ):
         
         if save_dir is not None and not os.path.exists(save_dir):
@@ -485,6 +486,13 @@ class RavelInterpretorHypernetwork(nn.Module):
                 self.das_temperature_start, self.das_temperature_end, total_steps + 1
             ).to(self.interpretor_config.torch_dtype).to("cuda")
             self.interpretor.das_module.set_temperature(das_temperature_schedule[cur_steps])
+            
+        # Create a scheduler for the sparsity loss that is very small at the beginning and increases to the sparsity_loss_weight
+        # over the course of the training in a n
+        if schedule_sparsity_loss:
+            sparsity_loss_schedule = torch.linspace(
+                0.0, sparsity_loss_weight, total_steps + 1
+            ).to(self.interpretor_config.torch_dtype).to("cuda")
 
         for epoch in range(epochs):
             # Create a tqdm progress bar
@@ -569,7 +577,8 @@ class RavelInterpretorHypernetwork(nn.Module):
                         ).sum(dim=-1)
                         batch_source_selection_loss = source_selection_loss.mean()
                         
-                        training_loss += sparsity_loss_weight * batch_source_selection_loss
+                        step_sparsity_loss_weight = sparsity_loss_weight if not schedule_sparsity_loss else sparsity_loss_schedule[cur_steps]
+                        training_loss += step_sparsity_loss_weight * batch_source_selection_loss
                     
                     training_loss.backward()
                     nn.utils.clip_grad_norm_(
@@ -596,7 +605,11 @@ class RavelInterpretorHypernetwork(nn.Module):
                     if wandb.run:
                         wandb.log(metrics)
                     if cur_steps % 5 == 0:
-                        print(metrics)
+                        output_metrics = {**metrics}
+                        if apply_source_selection_sparsity_loss:
+                            output_metrics["sparsity_weight"] = step_sparsity_loss_weight
+                            
+                        print(output_metrics)
 
                     # Update progress bar
                     pbar.update(1)  # note: this was incorrectly displaying before!

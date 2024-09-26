@@ -178,7 +178,7 @@ if __name__ == "__main__":
     parser.add_argument("--ablate_source_token_attention", default=False, action="store_true")
     
     # if None, use Boundless DAS
-    parser.add_argument('--subspace_module', default="ReflectSelect", choices=[None, "DAS", "BoundlessDAS", "MaskSelect", "ReflectSelect"])
+    parser.add_argument('--subspace_module', default="DAS", choices=[None, "DAS", "BoundlessDAS", "MaskSelect", "ReflectSelect"])
     parser.add_argument("--das_dimension", type=int, default=128)
     parser.add_argument("--lr", type=float, default=2e-5)
     parser.add_argument("--weight_decay", type=float, default=0.01)
