@@ -175,11 +175,11 @@ class LlamaDecoderLayerWithDoubleCrossAttention(LlamaDecoderLayer):
         self.ablate_base_token_attention = config.ablate_base_token_attention
         self.ablate_source_token_attention = config.ablate_source_token_attention
         
-        if not self.ablate_base_token_attention:
+        if not self.ablate_source_token_attention:
             self.source_cross_attn = LlamaAttentionWithCrossAttention(config=config, layer_idx=layer_idx, is_cross_attention=True)
             self.source_cross_attn_input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         
-        if not self.ablate_source_token_attention:
+        if not self.ablate_base_token_attention:
             self.base_cross_attn = LlamaAttentionWithCrossAttention(config=config, layer_idx=layer_idx, is_cross_attention=True)
             self.base_cross_attn_input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 

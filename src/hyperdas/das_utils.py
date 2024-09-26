@@ -455,3 +455,73 @@ class ReflectiveLowRankRotatedSpaceIntervention(TrainableIntervention, Distribut
     
     def __str__(self):
         return f"ReflectiveLowRankRotatedSpaceIntervention()"
+    
+    
+
+
+class SAELowRankRotatedSpaceIntervention(TrainableIntervention, DistributedRepresentationIntervention):
+
+    """Intervention in the rotated space."""
+
+    def __init__(self, embed_dim, low_rank_dimension, torch_dtype=torch.bfloat16, save_vector=False, **kwargs):
+        super().__init__(**kwargs)
+        self.embed_dim = embed_dim
+        rotate_layer = LowRankRotateLayer(self.embed_dim, low_rank_dimension, init_orth=False)
+        self.rotate_layer = nn.utils.parametrizations.orthogonal(rotate_layer)
+        
+        self.rv_proj = HiddenStatesProjectionMLP(
+            in_size=self.embed_dim, 
+            out_size=self.embed_dim, 
+            torch_dtype=torch_dtype
+        )
+        
+        self.input_layernorm = LlamaRMSNorm(
+            hidden_size=self.embed_dim, eps=1e-5
+        ).to(dtype=torch_dtype)
+
+        self.sparsity = low_rank_dimension / self.embed_dim
+        
+        self.rvs = []
+        self.save_rv = save_vector
+        
+    def get_boundary_parameters(self):
+        return None
+    
+    def get_boundary_sparsity(self):
+        return torch.Tensor([self.sparsity])
+    
+    def get_temperature(self):
+        return None
+
+    def set_temperature(self, temp: torch.Tensor):
+        pass
+
+    def set_intervention_boundaries(self, intervention_boundaries):
+        return None
+
+    def forward(self, base, source, hidden_states):
+        
+        #############
+        
+        normalized_hidden_state = self.input_layernorm(hidden_states[:, -1, :])
+        rv = self.rv_proj(normalized_hidden_state)
+        rv = rv / torch.norm(rv, dim=-1, keepdim=True)
+        if self.save_rv:
+            self.rvs.append(rv)
+            
+        householder = torch.eye(self.embed_dim, device=rv.device, dtype=rv.dtype).unsqueeze(0) - 2 * torch.bmm(rv.unsqueeze(2), rv.unsqueeze(1))
+        reflected_weight = torch.matmul(householder, self.rotate_layer.weight.to(rv.dtype))
+        
+        ###############
+        
+        
+        rotated_base = torch.bmm(base, reflected_weight)
+        rotated_source = torch.bmm(source, reflected_weight)
+        
+        output = base + torch.matmul(
+            (rotated_source - rotated_base), torch.transpose(reflected_weight, 1, 2)
+        )
+        return output.to(base.dtype)
+    
+    def __str__(self):
+        return f"ReflectiveLowRankRotatedSpaceIntervention()"

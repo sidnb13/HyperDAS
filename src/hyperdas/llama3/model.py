@@ -94,6 +94,7 @@ class RavelInterpretorHypernetwork(nn.Module):
         output_intervention_weight: bool = True,
         is_causal: torch.Tensor = None,
         causal_loss_weight: float = 1.0,
+        iso_loss_weight: float = 1.0,
         intervention_weight: torch.Tensor = None,
         inference_mode = None,
     ):
@@ -120,6 +121,7 @@ class RavelInterpretorHypernetwork(nn.Module):
             if is_causal is not None:
                 loss_weight = torch.ones_like(labels, dtype=log_prob_predictions.dtype)
                 loss_weight[is_causal, :] = causal_loss_weight
+                loss_weight[~is_causal, :] = iso_loss_weight
             
             labels = labels.reshape(-1)
             
@@ -450,9 +452,11 @@ class RavelInterpretorHypernetwork(nn.Module):
         apply_source_selection_sparsity_loss=False,
         sparsity_loss_weight=0.25,
         causal_loss_weight=1.0,
+        iso_loss_weight=1.0,
         lr=3e-4,
         weight_decay=0.01,
         save_dir=None,
+        save_model=False
     ):
         
         if save_dir is not None and not os.path.exists(save_dir):
@@ -526,7 +530,7 @@ class RavelInterpretorHypernetwork(nn.Module):
                                 print(f"Disentangle Acc: {disentangle_acc}, Causal Acc: {causal_acc}, Isolate Acc: {isolate_acc}, Test Loss: {test_loss}")
                         
                     if checkpoint_per_steps is not None:
-                        if cur_steps % checkpoint_per_steps == 0 and save_dir is not None:
+                        if cur_steps % checkpoint_per_steps == 0 and save_dir is not None and save_model:
                             print("Saving model to {}".format(os.path.join(save_dir, f"model_epoch_{epoch}_step_{step}")))
                             self.save_model(os.path.join(save_dir, f"model_epoch_{epoch}_step_{step}"))
                             
@@ -545,6 +549,7 @@ class RavelInterpretorHypernetwork(nn.Module):
                         labels=batch["labels"].to("cuda"),
                         is_causal=batch["is_causal"].to("cuda"),
                         causal_loss_weight=causal_loss_weight,
+                        iso_loss_weight=iso_loss_weight,
                         output_intervention_weight=True,
                         inference_mode=None
                     )
@@ -623,5 +628,6 @@ class RavelInterpretorHypernetwork(nn.Module):
                     
         # Save the final model
         if save_dir is not None:
-            self.save_model(os.path.join(save_dir, "final_model"))
+            if save_model:
+                self.save_model(os.path.join(save_dir, "final_model"))
             json.dump(result_dict, open(os.path.join(save_dir, "final_result.json"), "w"))

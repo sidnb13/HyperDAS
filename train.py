@@ -44,10 +44,12 @@ def run_experiment(
     test_path=None,
     train_path=None,
     causal_loss_weight=1,
+    iso_loss_weight=1,
     num_decoders=8,
     initialize_from_scratch=False,
     ablate_base_token_attention=False,
     ablate_source_token_attention=False,
+    save_model=False,
 ):
     
     """if save_dir is not None:
@@ -116,7 +118,6 @@ def run_experiment(
         ablate_base_token_attention=ablate_base_token_attention,
         ablate_source_token_attention=ablate_source_token_attention,
     )
-
     hypernetwork = hypernetwork.to("cuda")
     
     if load_trained_from is not None:
@@ -134,8 +135,10 @@ def run_experiment(
         apply_source_selection_sparsity_loss=source_selection_sparsity_loss,
         sparsity_loss_weight=sparsity_loss_weight,
         causal_loss_weight=causal_loss_weight,
+        iso_loss_weight=iso_loss_weight,
         weight_decay=weight_decay, 
-        lr=lr
+        lr=lr,
+        save_model=save_model
     )
 
     if log_wandb:
@@ -151,22 +154,25 @@ if __name__ == "__main__":
     
     parser.add_argument("--load_trained_from", type=str, default=None)
     
-    parser.add_argument("--n_epochs", type=int, default=10)
+    parser.add_argument("--n_epochs", type=int, default=1)
     parser.add_argument("--model_name_or_path", type=str, default="/nlp/scr/sjd24/llama3-8b")
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--source_suffix_visibility", default=False, action="store_true")
     parser.add_argument("--base_suffix_visibility", default=False, action="store_true")
-    parser.add_argument("--save_dir", type=str, default=None)
-    parser.add_argument("--test_path", type=str, default="./experiments/RAVEL/data/city_country_test")
-    parser.add_argument("--train_path", type=str, default="./experiments/RAVEL/data/city_country_train")
+    parser.add_argument("--test_path", type=str, default="./experiments/RAVEL/data/city_test")
+    parser.add_argument("--train_path", type=str, default="./experiments/RAVEL/data/city_train")
     parser.add_argument("--source_selection_sparsity_loss", type=bool, default=True)
     parser.add_argument("--sparsity_loss_weight", type=float, default=1.5)
-    parser.add_argument("--causal_loss_weight", type=float, default=10)
+    parser.add_argument("--causal_loss_weight", type=float, default=3.5)
+    parser.add_argument("--iso_loss_weight", type=float, default=0.5)
+    
+    parser.add_argument("--save_dir", type=str, default="/nlp/scr/sjd24/hyperdas_city_visible")
+    parser.add_argument("--save_model", default=False, action="store_true")
         
     parser.add_argument('--inference_modes', nargs='+', default=["default", "bidding_argmax"])
     
     # Ablation
-    parser.add_argument("--num_decoders", type=int, default=2)
+    parser.add_argument("--num_decoders", type=int, default=8)
     parser.add_argument("--initialize_from_scratch", default=False, action="store_true")
     parser.add_argument("--ablate_base_token_attention", default=False, action="store_true")
     parser.add_argument("--ablate_source_token_attention", default=False, action="store_true")
@@ -176,7 +182,7 @@ if __name__ == "__main__":
     parser.add_argument("--das_dimension", type=int, default=128)
     parser.add_argument("--lr", type=float, default=2e-5)
     parser.add_argument("--weight_decay", type=float, default=0.01)
-    parser.add_argument("--eval_per_steps", type=int, default=4000)
+    parser.add_argument("--eval_per_steps", type=int, default=5000)
     parser.add_argument("--checkpoint_per_steps", type=int, default=None)
     
     args = parser.parse_args()
