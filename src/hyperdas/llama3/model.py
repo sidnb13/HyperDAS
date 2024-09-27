@@ -607,7 +607,7 @@ class RavelInterpretorHypernetwork(nn.Module):
                     if cur_steps % 5 == 0:
                         output_metrics = {**metrics}
                         if apply_source_selection_sparsity_loss:
-                            output_metrics["sparsity_weight"] = step_sparsity_loss_weight
+                            output_metrics["sparsity_weight"] = step_sparsity_loss_weight.item()
                             
                         print(output_metrics)
 
