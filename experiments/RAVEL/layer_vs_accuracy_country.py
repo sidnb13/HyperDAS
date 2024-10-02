@@ -5,7 +5,7 @@ sys.path.append('../..')
 from torch.utils.data import DataLoader
 from datasets import load_from_disk
 import torch
-from src.data_utils import generate_ravel_dataset, get_ravel_collate_fn, filter_dataset
+from src.hyperdas.data_utils import generate_ravel_dataset, get_ravel_collate_fn, filter_dataset
 from train import run_experiment
 
 from transformers import AutoTokenizer, LlamaForCausalLM

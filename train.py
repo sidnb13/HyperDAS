@@ -33,7 +33,9 @@ def run_experiment(
     source_suffix_visibility=False,
     base_suffix_visibility=False,
     source_selection_sparsity_loss=True,
-    sparsity_loss_weight=0.25,
+    sparsity_loss_weight_start=0.5,
+    sparsity_loss_weight_end=1,
+    sparsity_loss_warm_up_ratio=0.1,
     save_dir=None,
     n_epochs=1,
     das_dimension=None,
@@ -50,6 +52,7 @@ def run_experiment(
     ablate_base_token_attention=False,
     ablate_source_token_attention=False,
     save_model=False,
+    break_asymmetric=False,
 ):
     
     """if save_dir is not None:
@@ -117,6 +120,7 @@ def run_experiment(
         initialize_from_scratch=initialize_from_scratch,
         ablate_base_token_attention=ablate_base_token_attention,
         ablate_source_token_attention=ablate_source_token_attention,
+        break_asymmetric=break_asymmetric
     )
     hypernetwork = hypernetwork.to("cuda")
     
@@ -133,7 +137,9 @@ def run_experiment(
         eval_per_steps = eval_per_steps,
         save_dir=save_dir,
         apply_source_selection_sparsity_loss=source_selection_sparsity_loss,
-        sparsity_loss_weight=sparsity_loss_weight,
+        sparsity_loss_weight_start=sparsity_loss_weight_start,
+        sparsity_loss_weight_end=sparsity_loss_weight_end,
+        sparsity_loss_warm_up_ratio=sparsity_loss_warm_up_ratio,
         causal_loss_weight=causal_loss_weight,
         iso_loss_weight=iso_loss_weight,
         weight_decay=weight_decay, 
@@ -154,20 +160,25 @@ if __name__ == "__main__":
     
     parser.add_argument("--load_trained_from", type=str, default=None)
     
-    parser.add_argument("--n_epochs", type=int, default=5)
-    parser.add_argument("--model_name_or_path", type=str, default="/scr-ssd/nlp/sjd24/llama3-8b")
+    parser.add_argument("--n_epochs", type=int, default=2)
+    parser.add_argument("--model_name_or_path", type=str, default="/nlp/scr/sjd24/llama3-8b")
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--source_suffix_visibility", default=False, action="store_true")
     parser.add_argument("--base_suffix_visibility", default=False, action="store_true")
+    
     parser.add_argument("--test_path", type=str, default="./experiments/RAVEL/data/city_test")
     parser.add_argument("--train_path", type=str, default="./experiments/RAVEL/data/city_train")
+    
     parser.add_argument("--source_selection_sparsity_loss", type=bool, default=True)
-    parser.add_argument("--sparsity_loss_weight", type=float, default=1.5)
+    parser.add_argument("--sparsity_loss_warm_up_ratio", type=float, default=0.05)
+    parser.add_argument("--sparsity_loss_weight_start", type=float, default=0.15)
+    parser.add_argument("--sparsity_loss_weight_end", type=float, default=1.5)
+    
     parser.add_argument("--causal_loss_weight", type=float, default=3.5)
     parser.add_argument("--iso_loss_weight", type=float, default=0.5)
     
-    parser.add_argument("--save_dir", type=str, default="/nlp/scr/sjd24/hyperdas_city_visible")
-    parser.add_argument("--save_model", default=True)
+    parser.add_argument("--save_dir", type=str, default="/scr-ssd/sjd24/city_new")
+    parser.add_argument("--save_model", default=False, action="store_true")
         
     parser.add_argument('--inference_modes', nargs='+', default=["default", "bidding_argmax"])
     
@@ -176,14 +187,15 @@ if __name__ == "__main__":
     parser.add_argument("--initialize_from_scratch", default=False, action="store_true")
     parser.add_argument("--ablate_base_token_attention", default=False, action="store_true")
     parser.add_argument("--ablate_source_token_attention", default=False, action="store_true")
+    parser.add_argument("--break_asymmetric", default=False, action="store_true")
     
     # if None, use Boundless DAS
     parser.add_argument('--subspace_module', default="ReflectSelect", choices=[None, "DAS", "BoundlessDAS", "MaskSelect", "ReflectSelect"])
     parser.add_argument("--das_dimension", type=int, default=128)
     parser.add_argument("--lr", type=float, default=2e-5)
     parser.add_argument("--weight_decay", type=float, default=0.01)
-    parser.add_argument("--eval_per_steps", type=int, default=None)
-    parser.add_argument("--checkpoint_per_steps", type=int, default=4000)
+    parser.add_argument("--eval_per_steps", type=int, default=2000)
+    parser.add_argument("--checkpoint_per_steps", type=int, default=None)
     
     args = parser.parse_args()
     args = dict(args.__dict__)

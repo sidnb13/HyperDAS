@@ -53,7 +53,7 @@ def run_experiment(
     )
 
     test_data_loader = DataLoader(
-        test_set, batch_size=16, collate_fn=collate_fn, shuffle=True
+        test_set, batch_size=batch_size, collate_fn=collate_fn, shuffle=True
     )
 
     model = LlamaForCausalLM.from_pretrained(model_name_or_path, torch_dtype=torch.bfloat16)
@@ -153,7 +153,7 @@ def run_experiment(
                     source_input_ids=batch["source_input_ids"].to("cuda"),
                     source_attention_mask=batch["source_attention_mask"].to("cuda"),
                     source_intervention_position=source_intervention_position,
-                    intervention_layer=12,
+                    intervention_layer=intervention_layer,
                 )
                 
                 logits = output.logits
@@ -212,10 +212,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--intervention_layer", type=int, default=15)
     parser.add_argument("--checkpoint_path", type=str, default=None)
-    parser.add_argument("--model_name_or_path", type=str, default="/nlp/scr/sjd24/llama3-8b")
+    parser.add_argument("--model_name_or_path", type=str, default="/scr-ssd/sjd24/llama3-8b")
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--save_dir", type=str, default=None)
-    parser.add_argument("--test_path", type=str, default="./experiments/ravel/data/city_country_test")
+    parser.add_argument("--test_path", type=str, default="./experiments/RAVEL/data/city_country_test")
     
     # if None, use Boundless DAS
     parser.add_argument("--intervention_location", type=str, choices=["last_token", "last_entity_token"], default="last_entity_token")

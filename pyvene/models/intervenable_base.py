@@ -1529,6 +1529,7 @@ class IntervenableModel(BaseModel):
                         self._key_setter_call_counter[key] += 1
                     if self._intervene_on_prompt ^ is_prompt:
                         return  # no-op
+                
                 if output is None:
                     if len(args) == 0:  # kwargs based calls
                         # PR: https://github.com/frankaging/align-transformers/issues/11
@@ -1536,7 +1537,7 @@ class IntervenableModel(BaseModel):
                         output = kwargs[list(kwargs.keys())[0]]
                     else:
                         output = args
-                        
+                
                 selected_output = self._gather_intervention_output(
                     output, key, unit_locations_base[key_i]
                 )
@@ -1928,6 +1929,7 @@ class IntervenableModel(BaseModel):
             if use_cache is not None and 'use_cache' in self.model.config.to_dict(): # for transformer models
                 model_kwargs["use_cache"] = use_cache
 
+        
             counterfactual_outputs = self.model(**base, **model_kwargs)
 
             set_handlers_to_remove.remove()
@@ -1951,7 +1953,7 @@ class IntervenableModel(BaseModel):
                     (sources is None and activations_sources is not None) or \
                     self.return_collect_activations
             )
-        
+            
         if self.return_collect_activations:
             if return_dict:
                 return IntervenableModelOutput(

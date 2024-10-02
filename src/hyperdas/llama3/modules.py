@@ -45,6 +45,7 @@ class LlamaInterpretorConfig(LlamaConfig):
     initialize_from_scratch: bool = False
     ablate_base_token_attention: bool = False
     ablate_source_token_attention: bool = False
+    break_asymmetric: bool = False
     
 
 class LlamaModelWithCrossAttention(LlamaModel):
@@ -505,11 +506,12 @@ class LlamaInterpretor(nn.Module):
             intervention_layer = self.config.intervention_layer 
             
         if base_position_ids is None:
-            # 0 for all the padding tokens and start from 1 for the rest
-            base_position_ids = torch.cumsum(base_attention_mask, dim=1) * base_attention_mask
-        
+            # -1 for all the padding tokens and start from 0 for the rest
+            base_position_ids = torch.cumsum(base_attention_mask, dim=1) * base_attention_mask - 1
+            
         if source_position_ids is None:
-            source_position_ids = torch.cumsum(source_attention_mask, dim=1) * source_attention_mask
+            # -1 for all the padding tokens and start from 0 for the rest
+            source_position_ids = torch.cumsum(source_attention_mask, dim=1) * source_attention_mask - 1
         
         # Run target model for encoded hidden states
         if base_hidden_states is None:

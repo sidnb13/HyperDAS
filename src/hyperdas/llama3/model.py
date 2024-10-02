@@ -11,6 +11,7 @@ import os
 from tqdm import tqdm
 import time
 import json
+import numpy as np
 
 
 class RavelInterpretorHypernetwork(nn.Module):
@@ -27,6 +28,7 @@ class RavelInterpretorHypernetwork(nn.Module):
         initialize_from_scratch=False,
         ablate_base_token_attention=False,
         ablate_source_token_attention=False,
+        break_asymmetric=False,
     ):
         super().__init__()
 
@@ -40,7 +42,7 @@ class RavelInterpretorHypernetwork(nn.Module):
         self.interpretor_config.initialize_from_scratch = initialize_from_scratch
         self.interpretor_config.ablate_base_token_attention = ablate_base_token_attention
         self.interpretor_config.ablate_source_token_attention = ablate_source_token_attention
-        
+        self.interpretor_config.break_asymmetric = break_asymmetric
         
         self.interpretor = LlamaInterpretor(
             self.interpretor_config, 
@@ -240,11 +242,16 @@ class RavelInterpretorHypernetwork(nn.Module):
         annot=True,
         indicate_masked_tokens=False,
         digits=2,
-        contain_title=True
+        font_scale=1.0,
+        contain_title=True,
+        simplified_annot=True,
+        axes=None
     ):
+        
+        fig = None
         batch_id = idxs // batch_size
-        example_id = idxs % batch_size
-
+        example_id = idxs % batch_size            
+        
         for i, batch in enumerate(data_loader):
             if i == batch_id:
                 break
@@ -299,6 +306,19 @@ class RavelInterpretorHypernetwork(nn.Module):
                 masks = None
             sns.heatmap(intervention_weight.float().cpu().numpy(), xticklabels=base_axis, yticklabels=source_axis, ax=ax, annot=annot, fmt=f".{digits}f", mask=masks)
             
+            if simplified_annot:
+                for child in ax.get_children():
+                    if isinstance(child, plt.Text):
+                        
+                        # If child 
+                        if child.get_text().startswith("0."):
+                            if child.get_text().replace("0.", "").replace("0", "").strip() == "":
+                                child.set_text("0")
+                            else:
+                                child.set_text(child.get_text().replace("0.", "."))
+                        elif child.get_text().startswith("1"):
+                            child.set_text("1")
+            
             # Render the cell at (0, 0) with black background
             
             if contain_title:
@@ -307,7 +327,7 @@ class RavelInterpretorHypernetwork(nn.Module):
                 print(f"Instruction: {editor_text}     Label: {label}    Pred: {prediction}")
                 
             ax.set_xlabel("Base Sentence Tokens")
-            ax.set_ylabel("Source Sentence Tokens")
+            ax.set_ylabel("Counterfactual Sentence Tokens")
             
         def process_intervention_weight(intervention_weight):
             intervention_weight = intervention_weight[~intervention_weight_source_padding_idx, :]
@@ -336,7 +356,12 @@ class RavelInterpretorHypernetwork(nn.Module):
         
             sns.set(style=style, font_scale=3)
             intervention_weight = [process_intervention_weight(iw) for iw in intervention_weight]
-            fig, axes = plt.subplots(1, len(inference_mode), figsize=(10 + 15 * len(inference_mode), 15))
+            
+            if axes is not None:
+                assert len(axes) == len(inference_mode)
+            else:
+                fig, axes = plt.subplots(1, len(inference_mode), figsize=(10 + 15 * len(inference_mode), 15))
+                
             for i, ax in enumerate(axes):
                 plot_inference_model(
                     ax=ax,
@@ -355,9 +380,10 @@ class RavelInterpretorHypernetwork(nn.Module):
             style = sns.axes_style("dark")
             style["axes.facecolor"] = "#100a17"
             
-            sns.set(style=style)
+            sns.set(style=style, font_scale=font_scale)
             intervention_weight = process_intervention_weight(intervention_weight)
-            fig, axes = plt.subplots(figsize=(15, 15))
+            if axes is None:
+                fig, axes = plt.subplots(figsize=(15, 15))
             plot_inference_model(
                 ax=axes,
                 intervention_weight=intervention_weight,
@@ -450,7 +476,9 @@ class RavelInterpretorHypernetwork(nn.Module):
         eval_per_steps: int = None,
         checkpoint_per_steps: int = None,
         apply_source_selection_sparsity_loss=False,
-        sparsity_loss_weight=0.25,
+        sparsity_loss_weight_start=0.5,
+        sparsity_loss_weight_end=1.0,
+        sparsity_loss_warm_up_ratio=0.1,
         causal_loss_weight=1.0,
         iso_loss_weight=1.0,
         lr=3e-4,
@@ -487,12 +515,14 @@ class RavelInterpretorHypernetwork(nn.Module):
             ).to(self.interpretor_config.torch_dtype).to("cuda")
             self.interpretor.das_module.set_temperature(das_temperature_schedule[cur_steps])
             
-        # Create a scheduler for the sparsity loss that is very small at the beginning and increases to the sparsity_loss_weight
-        # over the course of the training in a n
+        # Create a scheduler for the sparsity loss that is very small at the beginning from sparsity_loss_weight_start and increases to the sparsity_loss_weight_end
+        # over the course of the training. Before sparsity_loss_warm_up_ratio * total_steps steps, the sparsity loss is not applied.
         if schedule_sparsity_loss:
+            warm_up_steps = int(sparsity_loss_warm_up_ratio * total_steps)
             sparsity_loss_schedule = torch.linspace(
-                0.0, sparsity_loss_weight, total_steps + 1
+                sparsity_loss_weight_start, sparsity_loss_weight_end, total_steps + 1
             ).to(self.interpretor_config.torch_dtype).to("cuda")
+            sparsity_loss_schedule[:warm_up_steps] = 0.0
 
         for epoch in range(epochs):
             # Create a tqdm progress bar
@@ -577,8 +607,8 @@ class RavelInterpretorHypernetwork(nn.Module):
                         ).sum(dim=-1)
                         batch_source_selection_loss = source_selection_loss.mean()
                         
-                        step_sparsity_loss_weight = sparsity_loss_weight if not schedule_sparsity_loss else sparsity_loss_schedule[cur_steps]
-                        training_loss += step_sparsity_loss_weight * batch_source_selection_loss
+                        step_sparsity_loss_weight = sparsity_loss_schedule[cur_steps]
+                        training_loss += sparsity_loss_schedule[cur_steps] * batch_source_selection_loss
                     
                     training_loss.backward()
                     nn.utils.clip_grad_norm_(
@@ -607,7 +637,7 @@ class RavelInterpretorHypernetwork(nn.Module):
                     if cur_steps % 5 == 0:
                         output_metrics = {**metrics}
                         if apply_source_selection_sparsity_loss:
-                            output_metrics["sparsity_weight"] = step_sparsity_loss_weight
+                            output_metrics["sparsity_weight"] = step_sparsity_loss_weight.item()
                             
                         print(output_metrics)
 

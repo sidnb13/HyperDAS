@@ -391,6 +391,8 @@ class InterpretorUnembedCrossAttention(LlamaAttentionWithCrossAttention):
         self.q_combine = nn.Linear(self.hidden_size * 2, self.hidden_size, bias=False)
         nn.init.uniform_(self.q_combine.weight)
         
+        self.break_asymmetric = config.break_asymmetric
+        
     def _update_encoder_attention_mask(self, attention_mask, attn_weights):
         attention_mask = attention_mask.unsqueeze(1)
         dtype = attn_weights.dtype
@@ -446,7 +448,16 @@ class InterpretorUnembedCrossAttention(LlamaAttentionWithCrossAttention):
         expanded_base_encoder_hidden_states = base_encoder_hidden_states.unsqueeze(1).expand(-1, source_n_tokens, -1, -1)
         expanded_source_encoder_hidden_states = source_encoder_hidden_states.unsqueeze(2).expand(-1, -1, base_n_tokens, -1)
         
-        encoder_hidden_states = torch.concat([expanded_base_encoder_hidden_states, expanded_source_encoder_hidden_states], dim=-1)
+        if self.break_asymmetric:
+            # Flip a coin to decide base_encoder_hidden_states goes first or source_encoder_hidden_states goes first
+            
+            coin_flip = torch.randint(0, 2, (1,)).item()
+            if coin_flip:
+                encoder_hidden_states = torch.concat([expanded_source_encoder_hidden_states, expanded_base_encoder_hidden_states], dim=-1)
+            else:
+                encoder_hidden_states = torch.concat([expanded_base_encoder_hidden_states, expanded_source_encoder_hidden_states], dim=-1)
+        else:
+            encoder_hidden_states = torch.concat([expanded_base_encoder_hidden_states, expanded_source_encoder_hidden_states], dim=-1)
         encoder_hidden_states = self.q_combine(encoder_hidden_states)
         encoder_hidden_states = torch.concat([encoder_hidden_states, base_encoder_hidden_states.unsqueeze(1)], dim=1)
 

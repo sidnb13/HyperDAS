@@ -544,7 +544,7 @@ def generate_ravel_dataset_from_filtered(
     return dataset
 
 
-def filter_dataset(model, tokenizer, dataset, batch_size=16, eval_n_label_tokens=None, add_space_before_target=True):
+def filter_dataset(model, tokenizer, dataset, batch_size=16, eval_n_label_tokens=None, add_space_before_target=True, relative_position_ids=False):
         
     model.eval()
     correct_idxs = set()
@@ -559,6 +559,9 @@ def filter_dataset(model, tokenizer, dataset, batch_size=16, eval_n_label_tokens
         for batch_id, batch in tqdm(enumerate(data_loader)):
             
             batch = {k: v.to("cuda") for k, v in batch.items()}
+            
+            if relative_position_ids:
+                batch["position_ids"] = torch.cumsum(batch["attention_mask"], dim=1) * batch["attention_mask"] - 1
             
             prediction = model(**batch)            
             batch_pred_ids = torch.argmax(prediction["logits"], dim=-1)
