@@ -12,6 +12,7 @@ from tqdm import tqdm
 import time
 import json
 import numpy as np
+from ..das_utils import QuasiProjectiveIntervention
 
 
 class RavelInterpretorHypernetwork(nn.Module):
@@ -157,7 +158,6 @@ class RavelInterpretorHypernetwork(nn.Module):
         
         return _pred
         
-    
     # Generate text using the target model, with a new edit application at every step.
     # This is a very slow way to generate text.
     # If you only want to edit first k tokens, use the forward pass instead with stop_editing_index = k
@@ -223,10 +223,14 @@ class RavelInterpretorHypernetwork(nn.Module):
                     correct_idxs.append(i)
                 correct += is_correct
                 
+        intervention_weight = predictions.intervention_weight
+        batch_intervention_entropy = self._intervention_entropy(intervention_weight, mean=False)
+                
         return_dict = {
             "batch_output": batch_output,
             "batch_full_output": batch_full_output,
-            "batch_intervention_weight": predictions.intervention_weight,
+            "batch_intervention_weight": intervention_weight,
+            "batch_intervention_entropy": batch_intervention_entropy,
             "n_correct": correct,
             "correct_idxs": correct_idxs
         }   
@@ -427,6 +431,8 @@ class RavelInterpretorHypernetwork(nn.Module):
                     intervention_weight=intervention_weight
                 )
                 test_loss.append(predictions["loss"].item())
+                if isinstance(self.interpretor.das_module, QuasiProjectiveIntervention):
+                    self.interpretor.zero_penalty()
                 
                 batch_pred_ids = torch.argmax(predictions["logits"], dim=-1)
                 is_causal.extend(batch["is_causal"].cpu().numpy().tolist())
@@ -465,7 +471,59 @@ class RavelInterpretorHypernetwork(nn.Module):
         }
                     
         return accuracies, sum(test_loss) / len(test_loss), correct_idxs
-             
+    
+    def _intervention_number(self, intervention_weight, mean=True):
+        p = intervention_weight[:, :-1, :]
+        p = torch.sum(p, dim=-1)
+        p = torch.sum(p, dim=-1)
+        
+        if mean:
+            p = torch.mean(p)
+        
+        return p
+    
+    def _intervention_entropy(self, intervention_weight, mean=True, normalize=True, balanced=False, atticus=True):
+        
+        """
+        Normalize the weight along dim=-1; if weight is zero across all tokens, then return itself
+        """
+        
+        
+        def __normalize(weight):
+            weight_sum = torch.sum(weight, dim=-1, keepdim=True)
+            weight_sum[weight_sum == 0.0] = 1.0
+            return weight / weight_sum
+        
+        def __balance(weight):
+            weight_sum = torch.sum(weight, dim=-1, keepdim=False)
+            weight_sum[weight_sum == 0.0] = 1.0
+            return weight_sum
+        
+        def __append_column(weight):
+            weight_sum = torch.sum(weight, dim=-1, keepdim=False)
+            new_column = torch.max(1.0 - weight_sum, torch.tensor(0.0).to(weight.device))
+            return torch.cat([weight, new_column.unsqueeze(-1)], dim=-1)
+
+        p = intervention_weight[:, :-1, :]
+        
+        if atticus:
+            p = __append_column(p)
+        
+        if normalize:
+            p = __normalize(p)
+        
+        logp = torch.log(p + 1e-8)
+        entropy = - torch.sum(p * logp, dim=-1)
+        
+        if balanced:
+            balanced_weight = __balance(intervention_weight[:, :-1, :])
+            entropy = entropy * balanced_weight
+
+        if mean:
+            entropy = torch.mean(entropy, dim=0)
+            entropy = torch.mean(entropy)
+            
+        return entropy         
 
     def run_train(
         self,
@@ -486,6 +544,7 @@ class RavelInterpretorHypernetwork(nn.Module):
         save_dir=None,
         save_model=False,
         schedule_sparsity_loss=True,
+        target_intervention_num=None,
     ):
         
         if save_dir is not None and not os.path.exists(save_dir):
@@ -599,16 +658,32 @@ class RavelInterpretorHypernetwork(nn.Module):
                                         
                     if apply_source_selection_sparsity_loss:
                         
-                        source_selection_sum = prediction.intervention_weight[:, :-1, :].sum(dim=-1)
-                        source_selection_loss = torch.where(
-                            source_selection_sum > 1.0,
-                            source_selection_sum,
-                            torch.zeros_like(source_selection_sum)
-                        ).sum(dim=-1)
-                        batch_source_selection_loss = source_selection_loss.mean()
+                        source_selection_sparsity_loss = self._intervention_entropy(prediction.intervention_weight)
+                        
+                        """p = torch.sum(prediction.intervention_weight[:, :-1, :], dim=-1, keepdim=True)
+                        
+                        logp = torch.log(p + 1e-8)
+                        entropy = - torch.sum(p * logp, dim=-1)
+                        
+                        batch_mean_entropy = torch.mean(entropy, dim=0)
+                        batch_mean_entropy = torch.mean(batch_mean_entropy)
+                        
+                        source_selection_sparsity_loss = batch_mean_entropy"""
                         
                         step_sparsity_loss_weight = sparsity_loss_schedule[cur_steps]
-                        training_loss += sparsity_loss_schedule[cur_steps] * batch_source_selection_loss
+                        training_loss += step_sparsity_loss_weight * source_selection_sparsity_loss
+                    
+                    if isinstance(self.interpretor.das_module, QuasiProjectiveIntervention):
+                        penalty = self.interpretor.get_penalty()
+                        training_loss += penalty
+                        self.interpretor.zero_penalty()
+                        
+                    if target_intervention_num is not None:
+                        assert type(target_intervention_num) == int
+                        
+                        source_target_intervention_num = self._intervention_number(prediction.intervention_weight, mean=True)
+                        intervention_number_loss = (source_target_intervention_num - target_intervention_num) ** 2
+                        training_loss += intervention_number_loss
                     
                     training_loss.backward()
                     nn.utils.clip_grad_norm_(
@@ -625,12 +700,14 @@ class RavelInterpretorHypernetwork(nn.Module):
 
                     metrics = {
                         "step": cur_steps,
-                        "train_batch_total_loss": training_loss.item(),
                         "train_batch_prediction_loss": prediction_loss.item(),
+                        "train_batch_sparsity_loss": source_selection_sparsity_loss.item(),
                     }
+                    if target_intervention_num is not None:
+                        metrics["train_batch_#intervention_loss"] = intervention_number_loss.item()
                     
-                    if self.use_das_intervention:
-                        metrics["das_sparsity"] = self.interpretor.das_module.get_boundary_sparsity().item()
+                    if isinstance(self.interpretor.das_module, QuasiProjectiveIntervention):
+                        metrics["train_batch_penalty"] = penalty.item()
 
                     if wandb.run:
                         wandb.log(metrics)
@@ -674,3 +751,4 @@ class RavelInterpretorHypernetwork(nn.Module):
             if save_model:
                 self.save_model(os.path.join(save_dir, "final_model"))
             json.dump(result_dict, open(os.path.join(save_dir, "final_result.json"), "w"))
+                    

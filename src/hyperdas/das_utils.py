@@ -462,3 +462,140 @@ class ReflectiveLowRankRotatedSpaceIntervention(TrainableIntervention, Distribut
     
     def __str__(self):
         return f"ReflectiveLowRankRotatedSpaceIntervention()"
+    
+
+
+class QuasiProjectiveIntervention(TrainableIntervention, DistributedRepresentationIntervention):
+
+    """Intervention via (ridge) quasi-projection onto the trained space."""
+
+    #Order of operations:
+    #(1) Editor activations @ encoder matrix -> we get an encoder score per each element of the dictonary. This is nn.Linear with bias
+    #(2) encoder scores -> topk dictionary elements 
+    #(3) topk -> select and mulitply, yielding [dictionary_element * encoder_score] for only the selected columns
+    #(4) perform quasi-projection (i.e, ridge regression) interchange on the selected and scaled columns
+    
+    #side note: instead of multiplying those columns by i:
+    #There is an equivalent form where we can keep columns X fixed, pre-compute X^T X elements, and then replace lambda* I with:  diag(score^2) 
+ 
+    def __init__(self, embed_dim, dict_size, top_k_parameter, lambda_parameter, importance_power=-2, torch_dtype=torch.bfloat16, return_penalty=True, **kwargs):
+        super().__init__(**kwargs)
+        self.embed_dim = embed_dim
+        self.dict_size = dict_size
+        self.top_k_parameter = top_k_parameter 
+        #note: you could technically set top_k_parameter equal to full dictionary, it'd just be more expensive computationally
+        #and you might want more fall-off
+        self.lambda_parameter = lambda_parameter
+        self.importance_power = importance_power
+
+        self.edit_instruction_encodings = nn.Sequential(
+            nn.Linear(in_features = embed_dim, out_features= dict_size, bias=True).to(dtype=torch_dtype),
+            nn.ReLU()
+        )
+        
+        # Create a dict_size * embed_dim embedding matrix
+        self.basis_dictionary = nn.Embedding(
+            num_embeddings=dict_size, embedding_dim=embed_dim
+        ).to(dtype=torch_dtype)
+        
+        self.return_penalty = return_penalty
+        self.penalty = None
+        
+        self.input_layernorm = LlamaRMSNorm(
+            hidden_size=self.embed_dim, eps=1e-5
+        ).to(dtype=torch_dtype)
+        
+    def get_penalty(self):
+        if self.penalty is None:
+            raise ValueError("Penalty is not set.")
+        return self.penalty
+    
+    def zero_penalty(self):
+        self.penalty = None
+        
+    def get_boundary_parameters(self):
+        return None
+    
+    def get_boundary_sparsity(self):
+        return torch.Tensor([self.dict_size / self.embed_dim])
+    
+    def get_temperature(self):
+        return None
+
+    def set_temperature(self, temp: torch.Tensor):
+        pass
+
+    def set_intervention_boundaries(self, intervention_boundaries):
+        return None
+
+    def compute_ridge(self, X, Y, importance_scores, importance_power=-2):
+        
+        # X: batch x k x d_embed
+        # Y: batch x seq x d_embed
+        # importance_scores: batch x k
+
+        # denominator scores will be a component inside the matrix inversion
+        # Note that alpha < 0 implies that denominator_scores_i is low for the most important features
+        denominator_scores = importance_scores ** importance_power # batch, num_active_features
+        # denominator_scores:
+        
+        # Compute the ridge regression solution
+        XTX = torch.matmul(X, X.transpose(-2, -1))                      #XTX: batch x d_embed x num_active_features
+        XTY = torch.matmul(X, Y.transpose(-2, -1))                      #XTY: batch x d_embed x seq
+        diag_denominator_scores = torch.diag_embed(denominator_scores)  #diag_denominator_scores: batch x num_active_features x num_active_features
+        regularized_XTX = XTX + torch.diag_embed(denominator_scores)    # regularized_XTX:
+        
+        # Cast regularized_XTX and XTY to float32
+        regularized_XTX = regularized_XTX.to(torch.float32)
+        XTY = XTY.to(torch.float32)
+        # Solve the system
+        ridge_coeffs = torch.vmap(torch.linalg.solve, in_dims = (0,0))(regularized_XTX, XTY)
+        
+        # Cast ridge_coeffs back to the original dtype
+        ridge_coeffs = ridge_coeffs.to(X.dtype)
+        
+        # Multiply thru by X
+        predictions = torch.matmul(ridge_coeffs.transpose(-2, -1), X)
+        
+        return predictions
+        
+        
+    def forward(self, base, source, hidden_states):
+        
+        # Base:     batch x seq x d_embed
+        # Source:   batch x seq x d_embed
+        # Hidden:   batch x instruction_seq x d_embed
+        normalized_hidden_state = self.input_layernorm(hidden_states[:, -1, :])  # normalized_hidden_state: batch x d_embed
+        dictionary_encodings = self.edit_instruction_encodings(normalized_hidden_state) # dictionary_encodings: batch x d_embed
+
+        # Perform top-k index selection
+        top_k_values, top_k_indices = torch.topk(dictionary_encodings, self.top_k_parameter, dim=-1)
+        # top_k_indices: batch x k; top_k_values: batch x k
+
+        # Remove indices where the value is less than zero
+        # positive_mask = top_k_values > 0
+        # top_k_values = top_k_values[positive_mask]
+        # top_k_indices = top_k_indices[positive_mask]
+
+        # Select rows of the dictionary according to top_k_indices
+        selected_dictionary = self.basis_dictionary(top_k_indices)
+        
+        base_interchange = self.compute_ridge(selected_dictionary, base, top_k_values, importance_power=self.importance_power)
+        source_interchange = self.compute_ridge(selected_dictionary, source, top_k_values, importance_power=self.importance_power)
+        output = base + (source_interchange - base_interchange)
+        
+        if self.return_penalty:
+            penalty = torch.sum(self.lambda_parameter / (self.lambda_parameter + top_k_values ** self.importance_power))
+            if self.penalty is not None:
+                raise ValueError("Penalty is already set.")
+            
+            self.penalty = penalty
+        
+        # penalty is sensitive to lambda_parameter, and it controls how much the solutions are influenced by each dimension
+        # ...in one of the limits, as you tune up lambda_parameter really big or small, you should get negligible interchange 
+        # (check this! as a sanity-check!)
+        return output.to(base.dtype)
+
+    
+    def __str__(self):
+        return f"QuasiProjectedIntervention()"

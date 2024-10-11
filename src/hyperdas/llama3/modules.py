@@ -23,8 +23,14 @@ from ..utils import (
     assign_layer_indices,
 )
 from .layers import InterpretorUnembedCrossAttention, LlamaDecoderLayerWithDoubleCrossAttention
-from ..das_utils import BoundlessRotatedSpaceIntervention, RotatedSpaceIntervention, LowRankRotatedSpaceIntervention, SelectiveLowRankRotatedSpaceIntervention,ReflectiveLowRankRotatedSpaceIntervention
-
+from ..das_utils import (
+    BoundlessRotatedSpaceIntervention, 
+    RotatedSpaceIntervention, 
+    LowRankRotatedSpaceIntervention, 
+    SelectiveLowRankRotatedSpaceIntervention,
+    ReflectiveLowRankRotatedSpaceIntervention,
+    QuasiProjectiveIntervention
+)
 from tqdm import tqdm
 from torch import optim
 import matplotlib.pyplot as plt
@@ -398,7 +404,7 @@ class LlamaInterpretor(nn.Module):
         self.bidding_threshold = 0.1
         
         self.use_das_intervention = subspace_module != None
-        self.das_selective_subspace = subspace_module in ["ReflectSelect", "MaskSelect"]
+        self.das_selective_subspace = subspace_module in ["ReflectSelect", "MaskSelect", "QuasiProjective"]
                 
         if self.use_das_intervention:
             
@@ -417,6 +423,15 @@ class LlamaInterpretor(nn.Module):
             elif subspace_module == "ReflectSelect":
                 self.das_module = ReflectiveLowRankRotatedSpaceIntervention(
                     embed_dim=self.target_model.config.hidden_size, low_rank_dimension=das_dimension, torch_dtype=config.torch_dtype
+                )
+            elif subspace_module == "QuasiProjective":
+                self.das_module = QuasiProjectiveIntervention(
+                    embed_dim=self.target_model.config.hidden_size, 
+                    dict_size=self.target_model.config.hidden_size,
+                    top_k_parameter=128,
+                    lambda_parameter=10,
+                    return_penalty=True,
+                    torch_dtype=config.torch_dtype
                 )
             else:
                 raise ValueError("Invalid subspace module")
@@ -438,6 +453,16 @@ class LlamaInterpretor(nn.Module):
         else:"""
         
         self.layerwise_embeddings = None
+        
+    def get_penalty(self):
+        if isinstance(self.das_module, QuasiProjectiveIntervention):
+            return self.das_module.get_penalty()
+        
+        return None
+    
+    def zero_penalty(self):
+        if isinstance(self.das_module, QuasiProjectiveIntervention):
+            self.das_module.zero_penalty()
 
     def train(self: T, mode: bool = True) -> T:
         return self.hypernetwork.train(mode)
