@@ -1,0 +1,55 @@
+defaults:
+  - _self_
+  - override hydra/hydra_logging: disabled
+  - override hydra/job_logging: disabled
+
+# Common parameters
+log_wandb: false
+wandb_project: "HyperDAS"
+wandb_run_name: null
+intervention_layer: 15
+load_trained_from: null
+n_epochs: 5
+model_name_or_path: "/nlp/scr/sjd24/llama3-8b"
+batch_size: 16
+save_dir: null
+test_path: "./experiments/RAVEL/data/nobel_prize_winner_field_test"
+train_path: "./experiments/RAVEL/data/nobel_prize_winner_field_train"
+causal_loss_weight: 1.0
+das_dimension: 128
+lr: 1e-4
+eval_per_steps: 100
+checkpoint_per_steps: null
+
+# Specific parameters for train.py
+source_suffix_visibility: false
+base_suffix_visibility: false
+source_selection_sparsity_loss: true
+sparsity_loss_warm_up_ratio: 0.25
+sparsity_loss_weight_start: 0.0
+sparsity_loss_weight_end: 1.0
+target_intervention_num: null
+iso_loss_weight: 1.0
+save_model: false
+inference_modes: ["default", "bidding_argmax"]
+num_decoders: 8
+initialize_from_scratch: false
+ablate_base_token_attention: false
+ablate_source_token_attention: false
+break_asymmetric: false
+subspace_module: "ReflectSelect"
+weight_decay: 0.01
+
+# Specific parameters for train_ablation.py
+# (Add any specific parameters here)
+
+# Specific parameters for train_baseline.py
+intervention_location: "last_entity_token"
+
+# Hydra-specific configuration
+hydra:
+  run:
+    dir: ./outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: ./multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.num}
