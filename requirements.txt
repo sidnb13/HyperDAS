@@ -17,3 +17,4 @@ lxml
 pycryptodomex
 tiktoken
 pyvene
+pre-commit

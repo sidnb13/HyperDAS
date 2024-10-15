@@ -1,11 +1,12 @@
-import random
 import copy
 import inspect
 import itertools
-import torch
+import random
 from collections import defaultdict
-import networkx as nx
+
 import matplotlib.pyplot as plt
+import networkx as nx
+import torch
 
 
 class CausalModel:
@@ -76,7 +77,7 @@ class CausalModel:
             self.equiv_classes = equiv_classes
         else:
             self.equiv_classes = {}
-    
+
     def generate_equiv_classes(self):
         for var in self.variables:
             if var in self.inputs or var in self.equiv_classes:
@@ -122,7 +123,14 @@ class CausalModel:
             ]
         )
         plt.figure(figsize=(10, 10))
-        nx.draw_networkx(G, with_labels=True, node_color="green", pos=self.pos, font_size=font, node_size=node_size)
+        nx.draw_networkx(
+            G,
+            with_labels=True,
+            node_color="green",
+            pos=self.pos,
+            font_size=font,
+            node_size=node_size,
+        )
         plt.show()
 
     def find_live_paths(self, intervention):
@@ -166,7 +174,14 @@ class CausalModel:
         if self.pos is not None:
             for var in self.pos:
                 newpos[relabeler[var]] = self.pos[var]
-        nx.draw_networkx(G, with_labels=True, node_color="green", pos=newpos, font_size=font, node_size=node_size)
+        nx.draw_networkx(
+            G,
+            with_labels=True,
+            node_color="green",
+            pos=newpos,
+            font_size=font,
+            node_size=node_size,
+        )
         plt.show()
 
     def run_forward(self, intervention=None):
@@ -235,7 +250,6 @@ class CausalModel:
             output_var = self.outputs[0]
         if output_var_value is None:
             output_var_value = random.choice(self.values[output_var])
-
 
         def create_input(var, value, input={}):
             parent_values = random.choice(self.equiv_classes[var][value])
@@ -314,7 +328,7 @@ class CausalModel:
     ):
         if sampler is None:
             sampler = self.sample_input
-        
+
         if input_function is None:
             input_function = self.input_to_tensor
         if output_function is None:
@@ -327,11 +341,11 @@ class CausalModel:
             if filter is None or filter(input):
                 output = self.run_forward(input)
                 if return_tensors:
-                    example['input_ids'] = input_function(input).to(device)
-                    example['labels'] = output_function(output).to(device)
+                    example["input_ids"] = input_function(input).to(device)
+                    example["labels"] = output_function(output).to(device)
                 else:
-                    example['input_ids'] = input
-                    example['labels'] = output
+                    example["input_ids"] = input
+                    example["labels"] = output
                 examples.append(example)
 
         return examples
@@ -378,7 +392,9 @@ class CausalModel:
                         if var not in intervention:
                             continue
                         # sample input to match sampled intervention value
-                        source = sampler(output_var=var, output_var_value=intervention[var])
+                        source = sampler(
+                            output_var=var, output_var_value=intervention[var]
+                        )
                         if return_tensors:
                             sources.append(self.input_to_tensor(source))
                         else:
@@ -386,7 +402,9 @@ class CausalModel:
                         source_dic[var] = source
                     for _ in range(maxlength - len(sources)):
                         if return_tensors:
-                            sources.append(torch.zeros(self.input_to_tensor(base).shape))
+                            sources.append(
+                                torch.zeros(self.input_to_tensor(base).shape)
+                            )
                         else:
                             sources.append({})
 
@@ -403,11 +421,11 @@ class CausalModel:
                             [intervention_id(intervention)]
                         ).to(device)
                     else:
-                        example['labels'] = self.run_interchange(base, source_dic)
-                        example['base_labels'] = self.run_forward(base)
-                        example['input_ids'] = base
-                        example['source_input_ids'] = sources
-                        example['intervention_id'] = [intervention_id(intervention)]
+                        example["labels"] = self.run_interchange(base, source_dic)
+                        example["base_labels"] = self.run_forward(base)
+                        example["input_ids"] = base
+                        example["source_input_ids"] = sources
+                        example["intervention_id"] = [intervention_id(intervention)]
 
                     examples.append(example)
         return examples

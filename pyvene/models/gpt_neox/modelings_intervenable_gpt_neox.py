@@ -8,9 +8,7 @@ config the dimensions of intervention based on model config
 defined in the huggingface library.
 """
 
-
 from ..constants import *
-
 
 """gpt_neox base model"""
 gpt_neox_type_to_module_mapping = {
@@ -20,7 +18,11 @@ gpt_neox_type_to_module_mapping = {
     "mlp_output": ("layers[%s].mlp", CONST_OUTPUT_HOOK),
     "mlp_input": ("layers[%s].mlp", CONST_INPUT_HOOK),
     "attention_value_output": ("layers[%s].attention.dense", CONST_INPUT_HOOK),
-    "head_attention_value_output": ("layers[%s].attention.dense", CONST_INPUT_HOOK, (split_head_and_permute, "n_head")),
+    "head_attention_value_output": (
+        "layers[%s].attention.dense",
+        CONST_INPUT_HOOK,
+        (split_head_and_permute, "n_head"),
+    ),
     "attention_output": ("layers[%s].attention", CONST_OUTPUT_HOOK),
     "attention_input": ("layers[%s].attention", CONST_INPUT_HOOK),
     # 'query_output': ("layers[%s].attention.query_key_value", CONST_OUTPUT_HOOK),
@@ -58,7 +60,7 @@ gpt_neox_type_to_dimension_mapping = {
 """gpt_neox model with LM head"""
 gpt_neox_lm_type_to_module_mapping = {}
 for k, v in gpt_neox_type_to_module_mapping.items():
-    gpt_neox_lm_type_to_module_mapping[k] = (f"gpt_neox.{v[0]}", ) + v[1:]
+    gpt_neox_lm_type_to_module_mapping[k] = (f"gpt_neox.{v[0]}",) + v[1:]
 
 
 gpt_neox_lm_type_to_dimension_mapping = gpt_neox_type_to_dimension_mapping
@@ -66,7 +68,7 @@ gpt_neox_lm_type_to_dimension_mapping = gpt_neox_type_to_dimension_mapping
 
 def create_gpt_neox(name="EleutherAI/pythia-70m", cache_dir=None):
     """Creates a GPT2 model, config, and tokenizer from the given name and revision"""
-    from transformers import GPTNeoXForCausalLM, AutoTokenizer, GPTNeoXConfig
+    from transformers import AutoTokenizer, GPTNeoXConfig, GPTNeoXForCausalLM
 
     config = GPTNeoXConfig.from_pretrained(name)
     tokenizer = AutoTokenizer.from_pretrained(name)

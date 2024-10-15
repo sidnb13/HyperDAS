@@ -1,16 +1,16 @@
+from .backpack_gpt2.modelings_intervenable_backpack_gpt2 import *
+from .blip.modelings_intervenable_blip import *
+from .blip.modelings_intervenable_blip_itm import *
 from .constants import *
-from .llama.modelings_intervenable_llama import *
-from .mistral.modellings_intervenable_mistral import *
 from .gemma.modelings_intervenable_gemma import *
 from .gpt2.modelings_intervenable_gpt2 import *
 from .gpt_neo.modelings_intervenable_gpt_neo import *
 from .gpt_neox.modelings_intervenable_gpt_neox import *
-from .mlp.modelings_intervenable_mlp import *
 from .gru.modelings_intervenable_gru import *
-from .blip.modelings_intervenable_blip import *
-from .blip.modelings_intervenable_blip_itm import *
-from .backpack_gpt2.modelings_intervenable_backpack_gpt2 import *
+from .llama.modelings_intervenable_llama import *
 from .llava.modelings_intervenable_llava import *
+from .mistral.modellings_intervenable_mistral import *
+from .mlp.modelings_intervenable_mlp import *
 from .olmo.modelings_intervenable_olmo import *
 
 #########################################################################
@@ -23,9 +23,10 @@ things that need to be changed.
 """
 
 import transformers.models as hf_models
-from .mlp.modelings_mlp import MLPModel, MLPForClassification
-from .gru.modelings_gru import GRUModel, GRULMHeadModel, GRUForClassification
+
 from .backpack_gpt2.modelings_backpack_gpt2 import BackpackGPT2LMHeadModel
+from .gru.modelings_gru import GRUForClassification, GRULMHeadModel, GRUModel
+from .mlp.modelings_mlp import MLPForClassification, MLPModel
 
 enable_blip = True
 try:
@@ -59,7 +60,7 @@ type_to_module_mapping = {
     hf_models.gemma.modeling_gemma.GemmaForCausalLM: gemma_lm_type_to_module_mapping,
     hf_models.gemma.modeling_gemma.GemmaForSequenceClassification: gemma_classifier_type_to_module_mapping,
     hf_models.olmo.modeling_olmo.OlmoModel: olmo_type_to_module_mapping,
-    hf_models.olmo.modeling_olmo.OlmoForCausalLM: olmo_lm_type_to_module_mapping,  
+    hf_models.olmo.modeling_olmo.OlmoForCausalLM: olmo_lm_type_to_module_mapping,
     hf_models.blip.modeling_blip.BlipForQuestionAnswering: blip_type_to_module_mapping,
     hf_models.blip.modeling_blip.BlipForImageTextRetrieval: blip_itm_type_to_module_mapping,
     MLPModel: mlp_type_to_module_mapping,
@@ -92,7 +93,7 @@ type_to_dimension_mapping = {
     hf_models.gemma.modeling_gemma.GemmaForCausalLM: gemma_lm_type_to_dimension_mapping,
     hf_models.gemma.modeling_gemma.GemmaForSequenceClassification: gemma_classifier_type_to_dimension_mapping,
     hf_models.olmo.modeling_olmo.OlmoModel: olmo_type_to_dimension_mapping,
-    hf_models.olmo.modeling_olmo.OlmoForCausalLM: olmo_lm_type_to_dimension_mapping, 
+    hf_models.olmo.modeling_olmo.OlmoForCausalLM: olmo_lm_type_to_dimension_mapping,
     hf_models.blip.modeling_blip.BlipForQuestionAnswering: blip_type_to_dimension_mapping,
     hf_models.blip.modeling_blip.BlipForImageTextRetrieval: blip_itm_type_to_dimension_mapping,
     MLPModel: mlp_type_to_dimension_mapping,
@@ -105,5 +106,7 @@ type_to_dimension_mapping = {
 }
 if enable_blip:
     type_to_dimension_mapping[BlipWrapper] = blip_wrapper_type_to_dimension_mapping
-    type_to_dimension_mapping[BlipITMWrapper] = blip_itm_wrapper_type_to_dimension_mapping
+    type_to_dimension_mapping[BlipITMWrapper] = (
+        blip_itm_wrapper_type_to_dimension_mapping
+    )
 #########################################################################

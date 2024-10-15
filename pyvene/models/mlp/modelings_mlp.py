@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import Optional, Tuple
 
 import torch
@@ -5,9 +6,9 @@ import torch.nn as nn
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 from transformers import PretrainedConfig, PreTrainedModel
 from transformers.activations import ACT2FN
-from transformers.utils import ModelOutput
 from transformers.modeling_outputs import SequenceClassifierOutput
-from dataclasses import dataclass
+from transformers.utils import ModelOutput
+
 
 class MLPConfig(PretrainedConfig):
     model_type = "mlp"
@@ -39,6 +40,7 @@ class MLPConfig(PretrainedConfig):
         self.include_bias = include_bias
         self.squeeze_output = squeeze_output
         super().__init__(**kwargs)
+
 
 @dataclass
 class MLPModelOutput(ModelOutput):

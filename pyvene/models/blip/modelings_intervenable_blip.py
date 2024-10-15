@@ -8,7 +8,6 @@ config the dimensions of intervention based on model config
 defined in the huggingface library.
 """
 
-
 from ..constants import *
 
 """blip base model"""
@@ -101,7 +100,7 @@ blip_wrapper_type_to_dimension_mapping = blip_type_to_dimension_mapping
 
 def create_blip(name="Salesforce/blip-vqa-base", cache_dir=None):
     """Creates a BLIP VQA model, config, and tokenizer from the given name and revision"""
-    from transformers import BlipConfig, BlipProcessor, BlipForQuestionAnswering
+    from transformers import BlipConfig, BlipForQuestionAnswering, BlipProcessor
 
     config = BlipConfig.from_pretrained(name)
     processor = BlipProcessor.from_pretrained(name)

@@ -1,7 +1,8 @@
-import torch.nn as nn
 from abc import ABC, abstractmethod
-from transformers.models.llama.modeling_llama import LlamaRMSNorm
+
 import torch
+import torch.nn as nn
+from transformers.models.llama.modeling_llama import LlamaRMSNorm
 
 
 class HiddenStatesProjectionMLP(nn.Module):
@@ -670,4 +671,4 @@ class QuasiProjectiveIntervention(
         return output.to(base.dtype)
 
     def __str__(self):
-        return f"QuasiProjectedIntervention()"
+        return f"QuasiProjectedIntervention(top_k={self.top_k_parameter}, importance_power={self.importance_power}, lambda_parameter={self.lambda_parameter}, return_penalty={self.return_penalty})"

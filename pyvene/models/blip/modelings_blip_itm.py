@@ -1,8 +1,9 @@
+from typing import Dict, Optional, Tuple, Union
+
 import torch
 import torch.nn as nn
 from transformers import BlipConfig, BlipForImageTextRetrieval
 from transformers.utils import ModelOutput
-from typing import Optional, Union, Tuple, Dict
 
 
 class BlipITMWrapper(nn.Module):
@@ -55,7 +56,7 @@ class BlipITMWrapper(nn.Module):
 
         image_embeds = vision_outputs[0].to(self.model_text_enc.device)
         input_ids = input_ids.to(self.model_text_enc.device)
-        
+
         if self.use_itm_head:
             image_attention_mask = torch.ones(
                 image_embeds.size()[:-1], dtype=torch.long

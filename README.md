@@ -27,6 +27,13 @@
      HF_TOKEN="your_huggingface_token_here"
      ```
 
+4. Install pre-commit hooks:
+   ```
+   pre-commit install
+   # Optional, to run on all files right now
+   pre-commit run --all-files
+   ```
+
 ## Usage
 
 1. Activate the Conda environment:

@@ -64,25 +64,25 @@ class AutoencoderLayerBase(torch.nn.Module, metaclass=ABCMeta):
     """An abstract base class that defines an interface of an autoencoder."""
 
     @abstractmethod
-    def encode(self, x):
-        ...
+    def encode(self, x): ...
 
     @abstractmethod
-    def decode(self, latent):
-        ...
+    def decode(self, latent): ...
 
 
 class AutoencoderLayer(AutoencoderLayerBase):
     """An autoencoder with a single-layer encoder and single-layer decoder."""
+
     def __init__(self, input_dim, latent_dim, **kwargs):
         super().__init__()
         self.input_dim = input_dim
         self.latent_dim = latent_dim
         self.encoder = torch.nn.Sequential(
-              torch.nn.Linear(input_dim, latent_dim, bias=True),
-              torch.nn.ReLU())
+            torch.nn.Linear(input_dim, latent_dim, bias=True), torch.nn.ReLU()
+        )
         self.decoder = torch.nn.Sequential(
-              torch.nn.Linear(latent_dim, input_dim, bias=True))
+            torch.nn.Linear(latent_dim, input_dim, bias=True)
+        )
 
     def encode(self, x):
         x = x.to(self.encoder[0].weight.dtype)
@@ -100,4 +100,4 @@ class AutoencoderLayer(AutoencoderLayerBase):
         base_reconstruct = self.decode(latent)
         if not return_latent:
             return base_reconstruct.to(base_type)
-        return {'latent': latent, 'output': base_reconstruct}
+        return {"latent": latent, "output": base_reconstruct}

@@ -41,6 +41,7 @@ def run_experiment(
     test_path=None,
     train_path=None,
     causal_loss_weight=1,
+    **kwargs,
 ):
     if save_dir is not None:
         save_dir = os.path.join("./models", save_dir)

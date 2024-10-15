@@ -9,3 +9,12 @@ data/
 *.out
 .env
 scripts/
+
+.ruff_cache/
+
+# Alternatively, you can use the assets/ directory to store your models, ckpts, etc..
+assets/
+
+# for hydra
+multirun/
+outputs/

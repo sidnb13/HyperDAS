@@ -1,5 +1,6 @@
 import argparse
 import os
+from sqlite3 import InterfaceError
 
 import hydra
 import wandb
@@ -8,6 +9,7 @@ from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 
+import inference
 from src.hyperdas.data_utils import (
     get_ravel_collate_fn,
 )
@@ -31,6 +33,7 @@ def run_experiment(
     sparsity_loss_warm_up_ratio=0.1,
     save_dir=None,
     n_epochs=1,
+    n_steps=-1,
     das_dimension=None,
     lr=3e-5,
     weight_decay=0.01,
@@ -47,6 +50,7 @@ def run_experiment(
     save_model=False,
     break_asymmetric=False,
     target_intervention_num=None,
+    **kwargs,
 ):
     """if save_dir is not None:
     save_dir = os.path.join("./models", save_dir)"""
@@ -89,6 +93,7 @@ def run_experiment(
         source_suffix_visibility=source_suffix_visibility,
         base_suffix_visibility=base_suffix_visibility,
         add_space_before_target=True,
+        contain_entity_position="groundtruth" in inference_modes,
     )
 
     data_loader = DataLoader(
@@ -112,8 +117,8 @@ def run_experiment(
         ablate_base_token_attention=ablate_base_token_attention,
         ablate_source_token_attention=ablate_source_token_attention,
         break_asymmetric=break_asymmetric,
+        device="cuda",
     )
-    hypernetwork = hypernetwork.to("cuda")
 
     if load_trained_from is not None:
         hypernetwork.load_model(load_trained_from)
@@ -124,6 +129,7 @@ def run_experiment(
         test_loader=test_data_loader,
         inference_modes=inference_modes,
         epochs=n_epochs,
+        steps=n_steps,
         checkpoint_per_steps=checkpoint_per_steps,
         eval_per_steps=eval_per_steps,
         save_dir=save_dir,
@@ -160,6 +166,7 @@ def argparse_main():
     parser.add_argument("--load_trained_from", type=str, default=None)
 
     parser.add_argument("--n_epochs", type=int, default=2)
+    parser.add_argument("--n_steps", type=int, default=-1)
     parser.add_argument(
         "--model_name_or_path", type=str, default="/scr-ssd/sjd24/llama3-8b"
     )

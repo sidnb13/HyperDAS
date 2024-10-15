@@ -1,18 +1,19 @@
+from dataclasses import dataclass
+from typing import Optional, Tuple
+
+import numpy as np
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
-from typing import Optional, Tuple
-import numpy as np
-from dataclasses import dataclass
-from transformers.utils import ModelOutput
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 from transformers import PretrainedConfig, PreTrainedModel
 from transformers.activations import ACT2FN
 from transformers.modeling_outputs import (
+    CausalLMOutput,
     ModelOutput,
     SequenceClassifierOutput,
-    CausalLMOutput,
 )
+from transformers.utils import ModelOutput
 
 
 class GRUConfig(PretrainedConfig):

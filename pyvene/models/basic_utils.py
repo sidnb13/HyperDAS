@@ -1,15 +1,15 @@
 """
 Basic Utils
 """
-import os
+
 import copy
-import random
 import importlib
-import torch
+import os
+import random
 
-from torch import nn
 import numpy as np
-
+import torch
+from torch import nn
 
 lsm = nn.LogSoftmax(dim=2)
 sm = nn.Softmax(dim=2)
@@ -127,7 +127,8 @@ def top_vals(tokenizer, res, n=10, return_results=False):
             print(f"{tok:<20} {top_values[i].item()}")
     if return_results:
         return ret
-        
+
+
 def get_list_depth(lst):
     """Return the max depth of the input list"""
     if isinstance(lst, list):
@@ -157,17 +158,6 @@ def GET_LOC(
     From simple locale to nested one.
     """
     if unit == "h.pos":
-        return [ 
-                   [ 
-                       [ 
-                           [LOC[0]] 
-                       ] * batch_size, 
-                       [ 
-                           [LOC[1]] 
-                       ] * batch_size 
-                   ] 
-               ]
+        return [[[[LOC[0]]] * batch_size, [[LOC[1]]] * batch_size]]
     else:
-        raise NotImplementedError(
-            f"{unit} is not supported."
-        )
+        raise NotImplementedError(f"{unit} is not supported.")

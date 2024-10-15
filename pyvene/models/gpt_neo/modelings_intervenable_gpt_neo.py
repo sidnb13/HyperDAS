@@ -8,9 +8,7 @@ config the dimensions of intervention based on model config
 defined in the huggingface library.
 """
 
-
 from ..constants import *
-
 
 """gpt_neo base model"""
 gpt_neo_type_to_module_mapping = {
@@ -20,15 +18,31 @@ gpt_neo_type_to_module_mapping = {
     "mlp_output": ("h[%s].mlp", CONST_OUTPUT_HOOK),
     "mlp_input": ("h[%s].mlp", CONST_INPUT_HOOK),
     "attention_value_output": ("h[%s].attn.out_proj", CONST_INPUT_HOOK),
-    "head_attention_value_output": ("h[%s].attn.out_proj", CONST_INPUT_HOOK, (split_head_and_permute, "n_head")),
+    "head_attention_value_output": (
+        "h[%s].attn.out_proj",
+        CONST_INPUT_HOOK,
+        (split_head_and_permute, "n_head"),
+    ),
     "attention_output": ("h[%s].attn", CONST_OUTPUT_HOOK),
     "attention_input": ("h[%s].attn", CONST_INPUT_HOOK),
     "query_output": ("h[%s].attn.q_proj", CONST_OUTPUT_HOOK),
     "key_output": ("h[%s].attn.k_proj", CONST_OUTPUT_HOOK),
     "value_output": ("h[%s].attn.v_proj", CONST_OUTPUT_HOOK),
-    "head_query_output": ("h[%s].attn.q_proj", CONST_OUTPUT_HOOK, (split_head_and_permute, "n_head")),
-    "head_key_output": ("h[%s].attn.k_proj", CONST_OUTPUT_HOOK, (split_head_and_permute, "n_head")),
-    "head_value_output": ("h[%s].attn.v_proj", CONST_OUTPUT_HOOK, (split_head_and_permute, "n_head")),
+    "head_query_output": (
+        "h[%s].attn.q_proj",
+        CONST_OUTPUT_HOOK,
+        (split_head_and_permute, "n_head"),
+    ),
+    "head_key_output": (
+        "h[%s].attn.k_proj",
+        CONST_OUTPUT_HOOK,
+        (split_head_and_permute, "n_head"),
+    ),
+    "head_value_output": (
+        "h[%s].attn.v_proj",
+        CONST_OUTPUT_HOOK,
+        (split_head_and_permute, "n_head"),
+    ),
 }
 
 
@@ -58,17 +72,15 @@ gpt_neo_type_to_dimension_mapping = {
 """gpt_neo model with LM head"""
 gpt_neo_lm_type_to_module_mapping = {}
 for k, v in gpt_neo_type_to_module_mapping.items():
-    gpt_neo_lm_type_to_module_mapping[k] = (f"transformer.{v[0]}", ) + v[1:]
+    gpt_neo_lm_type_to_module_mapping[k] = (f"transformer.{v[0]}",) + v[1:]
 
 
 gpt_neo_lm_type_to_dimension_mapping = gpt_neo_type_to_dimension_mapping
 
 
-def create_gpt_neo(
-    name="roneneldan/TinyStories-33M", cache_dir=None
-):
+def create_gpt_neo(name="roneneldan/TinyStories-33M", cache_dir=None):
     """Creates a GPT2 model, config, and tokenizer from the given name and revision"""
-    from transformers import GPTNeoForCausalLM, GPT2Tokenizer, GPTNeoConfig
+    from transformers import GPT2Tokenizer, GPTNeoConfig, GPTNeoForCausalLM
 
     config = GPTNeoConfig.from_pretrained(name)
     tokenizer = GPT2Tokenizer.from_pretrained("EleutherAI/gpt-neo-125M")  # not sure

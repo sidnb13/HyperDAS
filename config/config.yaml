@@ -10,6 +10,7 @@ wandb_run_name: null
 intervention_layer: 15
 load_trained_from: null
 n_epochs: 5
+n_steps: -1
 model_name_or_path: "/nlp/scr/sjd24/llama3-8b"
 batch_size: 16
 save_dir: null
@@ -31,7 +32,7 @@ sparsity_loss_weight_end: 1.0
 target_intervention_num: null
 iso_loss_weight: 1.0
 save_model: false
-inference_modes: ["default", "bidding_argmax"]
+inference_modes: ["default", "bidding_argmax", "groundtruth", "column_argmax", "global_argmax"]
 num_decoders: 8
 initialize_from_scratch: false
 ablate_base_token_attention: false

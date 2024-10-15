@@ -1,8 +1,9 @@
+from typing import Dict, Optional, Tuple, Union
+
 import torch
 import torch.nn as nn
-from transformers import BlipForQuestionAnswering, BlipConfig
+from transformers import BlipConfig, BlipForQuestionAnswering
 from transformers.utils import ModelOutput
-from typing import Optional, Union, Tuple, Dict
 
 
 class BlipWrapper(nn.Module):

@@ -16,7 +16,9 @@ def rotate_half(x):
     return torch.cat((-x2, x1), dim=-1)
 
 
-def apply_rotary_pos_emb_single_attn(q_or_k, cos, sin, position_ids=None, unsqueeze_dim=1):
+def apply_rotary_pos_emb_single_attn(
+    q_or_k, cos, sin, position_ids=None, unsqueeze_dim=1
+):
     """Applies Rotary Position Embedding to the query and key tensors.
 
     Args:
@@ -42,7 +44,6 @@ def apply_rotary_pos_emb_single_attn(q_or_k, cos, sin, position_ids=None, unsque
     return q_or_k_embed
 
 
-
 class EditorConfig(PretrainedConfig):
     name_or_path: str = "TinyLlama/TinyLlama-1.1B-Chat-v0.1"
     chop_editor_at_layer: int = -1
@@ -59,7 +60,7 @@ class EditorModelOutput(BaseModelOutput):
     edited_hidden_states: Optional[torch.Tensor] = None
     edit_vectors: Optional[torch.Tensor] = None
     editor_attention: Optional[torch.Tensor] = None
-    
+
 
 @dataclass
 class InterpretorModelOutput(BaseModelOutput):
@@ -104,4 +105,3 @@ def assign_layer_indices(model):
             layer.layer_index = i + 1
     elif "llama" in model.config.name_or_path:
         pass
-    

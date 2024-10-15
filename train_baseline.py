@@ -33,6 +33,7 @@ def run_experiment(
     train_path=None,
     causal_loss_weight=1,
     intervention_location="last_entity_token",
+    **kwargs,
 ):
     if log_wandb:
         wandb.init(

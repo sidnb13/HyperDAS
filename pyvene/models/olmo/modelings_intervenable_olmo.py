@@ -8,11 +8,10 @@ config the dimensions of intervention based on model config
 defined in the huggingface library.
 """
 
-
 import torch
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
-from ..constants import *
 
+from ..constants import *
 
 olmo_type_to_module_mapping = {
     "block_input": ("layers[%s]", CONST_INPUT_HOOK),
@@ -21,15 +20,31 @@ olmo_type_to_module_mapping = {
     "mlp_output": ("layers[%s].mlp", CONST_OUTPUT_HOOK),
     "mlp_input": ("layers[%s].mlp", CONST_INPUT_HOOK),
     "attention_value_output": ("layers[%s].self_attn.o_proj", CONST_INPUT_HOOK),
-    "head_attention_value_output": ("layers[%s].self_attn.o_proj", CONST_INPUT_HOOK, (split_head_and_permute, "n_head")),
+    "head_attention_value_output": (
+        "layers[%s].self_attn.o_proj",
+        CONST_INPUT_HOOK,
+        (split_head_and_permute, "n_head"),
+    ),
     "attention_output": ("layers[%s].self_attn", CONST_OUTPUT_HOOK),
     "attention_input": ("layers[%s].self_attn", CONST_INPUT_HOOK),
     "query_output": ("layers[%s].self_attn.q_proj", CONST_OUTPUT_HOOK),
     "key_output": ("layers[%s].self_attn.k_proj", CONST_OUTPUT_HOOK),
     "value_output": ("layers[%s].self_attn.v_proj", CONST_OUTPUT_HOOK),
-    "head_query_output": ("layers[%s].self_attn.q_proj", CONST_OUTPUT_HOOK, (split_head_and_permute, "n_head")),
-    "head_key_output": ("layers[%s].self_attn.k_proj", CONST_OUTPUT_HOOK, (split_head_and_permute, "n_kv_head")),
-    "head_value_output": ("layers[%s].self_attn.v_proj", CONST_OUTPUT_HOOK, (split_head_and_permute, "n_kv_head")),
+    "head_query_output": (
+        "layers[%s].self_attn.q_proj",
+        CONST_OUTPUT_HOOK,
+        (split_head_and_permute, "n_head"),
+    ),
+    "head_key_output": (
+        "layers[%s].self_attn.k_proj",
+        CONST_OUTPUT_HOOK,
+        (split_head_and_permute, "n_kv_head"),
+    ),
+    "head_value_output": (
+        "layers[%s].self_attn.v_proj",
+        CONST_OUTPUT_HOOK,
+        (split_head_and_permute, "n_kv_head"),
+    ),
 }
 
 
@@ -57,7 +72,7 @@ olmo_type_to_dimension_mapping = {
 """olmo model with LM head"""
 olmo_lm_type_to_module_mapping = {}
 for k, v in olmo_type_to_module_mapping.items():
-    olmo_lm_type_to_module_mapping[k] = (f"model.{v[0]}", ) + v[1:]
+    olmo_lm_type_to_module_mapping[k] = (f"model.{v[0]}",) + v[1:]
 
 
 olmo_lm_type_to_dimension_mapping = olmo_type_to_dimension_mapping
@@ -66,15 +81,18 @@ olmo_lm_type_to_dimension_mapping = olmo_type_to_dimension_mapping
 """olmo model with classifier head"""
 olmo_classifier_type_to_module_mapping = {}
 for k, v in olmo_type_to_module_mapping.items():
-    olmo_classifier_type_to_module_mapping[k] = (f"model.{v[0]}", ) + v[1:]
+    olmo_classifier_type_to_module_mapping[k] = (f"model.{v[0]}",) + v[1:]
 
 
 olmo_classifier_type_to_dimension_mapping = olmo_type_to_dimension_mapping
 
 
 def create_olmo(
-    name="allenai/OLMo-7B-0424-hf", cache_dir=None, dtype=torch.bfloat16, config=None,
-    revision='main'
+    name="allenai/OLMo-7B-0424-hf",
+    cache_dir=None,
+    dtype=torch.bfloat16,
+    config=None,
+    revision="main",
 ):
     """Creates a OLMo Causal LM model, config, and tokenizer from the given name and revision"""
     if config is None:

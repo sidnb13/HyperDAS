@@ -1,15 +1,20 @@
-import torch
-import numpy as np
 from abc import ABC, abstractmethod
-from typing import Dict, Optional, Sequence, Union, List, Any
-
-from .layers import RotateLayer, LowRankRotateLayer, SubspaceLowRankRotateLayer, AutoencoderLayer
-from .basic_utils import sigmoid_boundary
-from .intervention_utils import _can_use_fast, _do_intervention_by_swap
-
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Sequence, Union
+
+import numpy as np
+import torch
 from transformers.activations import ACT2FN
 from transformers.utils import ModelOutput
+
+from .basic_utils import sigmoid_boundary
+from .intervention_utils import _can_use_fast, _do_intervention_by_swap
+from .layers import (
+    AutoencoderLayer,
+    LowRankRotateLayer,
+    RotateLayer,
+    SubspaceLowRankRotateLayer,
+)
 
 
 @dataclass
@@ -17,12 +22,12 @@ class InterventionOutput(ModelOutput):
     """
     Output of the IntervenableModel, including original outputs, intervened outputs, and collected activations.
     """
+
     output: Optional[Any] = None
     latent: Optional[Any] = None
 
 
 class Intervention(torch.nn.Module):
-
     """Intervention the original representations."""
 
     def __init__(self, **kwargs):
@@ -30,7 +35,9 @@ class Intervention(torch.nn.Module):
         self.trainable = False
         self.is_source_constant = False
 
-        self.keep_last_dim = kwargs["keep_last_dim"] if "keep_last_dim" in kwargs else False
+        self.keep_last_dim = (
+            kwargs["keep_last_dim"] if "keep_last_dim" in kwargs else False
+        )
         self.use_fast = kwargs["use_fast"] if "use_fast" in kwargs else False
         self.subspace_partition = (
             kwargs["subspace_partition"] if "subspace_partition" in kwargs else None
@@ -40,78 +47,83 @@ class Intervention(torch.nn.Module):
             expanded_subspace_partition = []
             for subspace in self.subspace_partition:
                 if len(subspace) == 2 and isinstance(subspace[0], int):
-                    expanded_subspace_partition.append([i for i in range(subspace[0],subspace[1])])
+                    expanded_subspace_partition.append(
+                        [i for i in range(subspace[0], subspace[1])]
+                    )
                 else:
                     # it could be discrete indices.
                     expanded_subspace_partition.append(subspace)
             self.subspace_partition = expanded_subspace_partition
-            
+
         if "embed_dim" in kwargs and kwargs["embed_dim"] is not None:
-            self.register_buffer('embed_dim', torch.tensor(kwargs["embed_dim"]))
-            self.register_buffer('interchange_dim', torch.tensor(kwargs["embed_dim"]))
+            self.register_buffer("embed_dim", torch.tensor(kwargs["embed_dim"]))
+            self.register_buffer("interchange_dim", torch.tensor(kwargs["embed_dim"]))
         else:
             self.embed_dim = None
             self.interchange_dim = None
-            
-        if "source_representation" in kwargs and kwargs["source_representation"] is not None:
+
+        if (
+            "source_representation" in kwargs
+            and kwargs["source_representation"] is not None
+        ):
             self.is_source_constant = True
-            self.register_buffer('source_representation', kwargs["source_representation"])
+            self.register_buffer(
+                "source_representation", kwargs["source_representation"]
+            )
         else:
-            if "hidden_source_representation" in kwargs and \
-                kwargs["hidden_source_representation"] is not None:
+            if (
+                "hidden_source_representation" in kwargs
+                and kwargs["hidden_source_representation"] is not None
+            ):
                 self.is_source_constant = True
             else:
                 self.source_representation = None
-                
+
     def set_source_representation(self, source_representation):
         self.is_source_constant = True
-        self.register_buffer('source_representation', source_representation)
-                
+        self.register_buffer("source_representation", source_representation)
+
     def set_interchange_dim(self, interchange_dim):
         if not isinstance(interchange_dim, torch.Tensor):
             # Convert integer or list into torch.Tensor.
             self.interchange_dim = torch.tensor(interchange_dim)
         else:
             self.interchange_dim = interchange_dim
-            
+
     @abstractmethod
     def forward(self, base, source, subspaces=None):
         pass
 
 
 class LocalistRepresentationIntervention(torch.nn.Module):
-
     """Localist representation."""
 
     def __init__(self, **kwargs):
         super().__init__()
         self.is_repr_distributed = False
-        
-        
-class DistributedRepresentationIntervention(torch.nn.Module):
 
+
+class DistributedRepresentationIntervention(torch.nn.Module):
     """Distributed representation."""
 
     def __init__(self, **kwargs):
         super().__init__()
         self.is_repr_distributed = True
-        
-        
-class TrainableIntervention(Intervention):
 
+
+class TrainableIntervention(Intervention):
     """Intervention the original representations."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.trainable = True
         self.is_source_constant = False
-        
+
     def tie_weight(self, linked_intervention):
         pass
 
 
 class ConstantSourceIntervention(Intervention):
-
     """Constant source."""
 
     def __init__(self, **kwargs):
@@ -120,16 +132,14 @@ class ConstantSourceIntervention(Intervention):
 
 
 class SourcelessIntervention(Intervention):
-
     """No source."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.is_source_constant = True
-    
-    
-class BasisAgnosticIntervention(Intervention):
 
+
+class BasisAgnosticIntervention(Intervention):
     """Intervention that will modify its basis in a uncontrolled manner."""
 
     def __init__(self, **kwargs):
@@ -138,21 +148,19 @@ class BasisAgnosticIntervention(Intervention):
 
 
 class SharedWeightsTrainableIntervention(TrainableIntervention):
-
     """Intervention the original representations."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.shared_weights = True
-        
-        
-class ZeroIntervention(ConstantSourceIntervention, LocalistRepresentationIntervention):
 
+
+class ZeroIntervention(ConstantSourceIntervention, LocalistRepresentationIntervention):
     """Zero-out activations."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        
+
     def forward(self, base, source=None, subspaces=None):
         return _do_intervention_by_swap(
             base,
@@ -166,15 +174,14 @@ class ZeroIntervention(ConstantSourceIntervention, LocalistRepresentationInterve
 
     def __str__(self):
         return f"ZeroIntervention()"
-        
-        
-class CollectIntervention(ConstantSourceIntervention):
 
+
+class CollectIntervention(ConstantSourceIntervention):
     """Collect activations."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        
+
     def forward(self, base, source=None, subspaces=None):
         return _do_intervention_by_swap(
             base,
@@ -188,15 +195,14 @@ class CollectIntervention(ConstantSourceIntervention):
 
     def __str__(self):
         return f"CollectIntervention()"
-        
-        
-class SkipIntervention(BasisAgnosticIntervention, LocalistRepresentationIntervention):
 
+
+class SkipIntervention(BasisAgnosticIntervention, LocalistRepresentationIntervention):
     """Skip the current intervening layer's computation in the hook function."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        
+
     def forward(self, base, source, subspaces=None):
         # source here is the base example input to the hook
         return _do_intervention_by_swap(
@@ -214,16 +220,17 @@ class SkipIntervention(BasisAgnosticIntervention, LocalistRepresentationInterven
 
 
 class VanillaIntervention(Intervention, LocalistRepresentationIntervention):
-
     """Intervention the original representations."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-    def forward(self, base, source, subspaces=None): 
+    def forward(self, base, source, subspaces=None):
         return _do_intervention_by_swap(
             base,
-            source if self.source_representation is None else self.source_representation,
+            source
+            if self.source_representation is None
+            else self.source_representation,
             "interchange",
             self.interchange_dim,
             subspaces,
@@ -235,8 +242,9 @@ class VanillaIntervention(Intervention, LocalistRepresentationIntervention):
         return f"VanillaIntervention()"
 
 
-class AdditionIntervention(BasisAgnosticIntervention, LocalistRepresentationIntervention):
-
+class AdditionIntervention(
+    BasisAgnosticIntervention, LocalistRepresentationIntervention
+):
     """Intervention the original representations with activation addition."""
 
     def __init__(self, **kwargs):
@@ -245,7 +253,9 @@ class AdditionIntervention(BasisAgnosticIntervention, LocalistRepresentationInte
     def forward(self, base, source, subspaces=None):
         return _do_intervention_by_swap(
             base,
-            source if self.source_representation is None else self.source_representation,
+            source
+            if self.source_representation is None
+            else self.source_representation,
             "add",
             self.interchange_dim,
             subspaces,
@@ -257,18 +267,20 @@ class AdditionIntervention(BasisAgnosticIntervention, LocalistRepresentationInte
         return f"AdditionIntervention()"
 
 
-class SubtractionIntervention(BasisAgnosticIntervention, LocalistRepresentationIntervention):
-
+class SubtractionIntervention(
+    BasisAgnosticIntervention, LocalistRepresentationIntervention
+):
     """Intervention the original representations with activation subtraction."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
     def forward(self, base, source, subspaces=None):
-        
         return _do_intervention_by_swap(
             base,
-            source if self.source_representation is None else self.source_representation,
+            source
+            if self.source_representation is None
+            else self.source_representation,
             "subtract",
             self.interchange_dim,
             subspaces,
@@ -280,8 +292,9 @@ class SubtractionIntervention(BasisAgnosticIntervention, LocalistRepresentationI
         return f"SubtractionIntervention()"
 
 
-class RotatedSpaceIntervention(TrainableIntervention, DistributedRepresentationIntervention):
-
+class RotatedSpaceIntervention(
+    TrainableIntervention, DistributedRepresentationIntervention
+):
     """Intervention in the rotated space."""
 
     def __init__(self, **kwargs):
@@ -310,8 +323,9 @@ class RotatedSpaceIntervention(TrainableIntervention, DistributedRepresentationI
         return f"RotatedSpaceIntervention()"
 
 
-class BoundlessRotatedSpaceIntervention(TrainableIntervention, DistributedRepresentationIntervention):
-
+class BoundlessRotatedSpaceIntervention(
+    TrainableIntervention, DistributedRepresentationIntervention
+):
     """Intervention in the rotated space with boundary mask."""
 
     def __init__(self, **kwargs):
@@ -339,7 +353,7 @@ class BoundlessRotatedSpaceIntervention(TrainableIntervention, DistributedRepres
         self.intervention_boundaries = torch.nn.Parameter(
             torch.tensor([intervention_boundaries]), requires_grad=True
         )
-        
+
     def forward(self, base, source, subspaces=None):
         batch_size = base.shape[0]
         rotated_base = self.rotate_layer(base)
@@ -368,8 +382,9 @@ class BoundlessRotatedSpaceIntervention(TrainableIntervention, DistributedRepres
         return f"BoundlessRotatedSpaceIntervention()"
 
 
-class SigmoidMaskRotatedSpaceIntervention(TrainableIntervention, DistributedRepresentationIntervention):
-
+class SigmoidMaskRotatedSpaceIntervention(
+    TrainableIntervention, DistributedRepresentationIntervention
+):
     """Intervention in the rotated space with boundary mask."""
 
     def __init__(self, **kwargs):
@@ -414,15 +429,15 @@ class SigmoidMaskRotatedSpaceIntervention(TrainableIntervention, DistributedRepr
         return f"SigmoidMaskRotatedSpaceIntervention()"
 
 
-class SigmoidMaskIntervention(TrainableIntervention, LocalistRepresentationIntervention):
-
+class SigmoidMaskIntervention(
+    TrainableIntervention, LocalistRepresentationIntervention
+):
     """Intervention in the original basis with binary mask."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.mask = torch.nn.Parameter(
-            torch.zeros(self.embed_dim), requires_grad=True)
-        
+        self.mask = torch.nn.Parameter(torch.zeros(self.embed_dim), requires_grad=True)
+
         self.temperature = torch.nn.Parameter(torch.tensor(0.01))
 
     def get_temperature(self):
@@ -434,21 +449,20 @@ class SigmoidMaskIntervention(TrainableIntervention, LocalistRepresentationInter
     def forward(self, base, source, subspaces=None):
         batch_size = base.shape[0]
         # get boundary mask between 0 and 1 from sigmoid
-        mask_sigmoid = torch.sigmoid(self.mask / torch.tensor(self.temperature)) 
-        
+        mask_sigmoid = torch.sigmoid(self.mask / torch.tensor(self.temperature))
+
         # interchange
-        intervened_output = (
-            1.0 - mask_sigmoid
-        ) * base + mask_sigmoid * source
+        intervened_output = (1.0 - mask_sigmoid) * base + mask_sigmoid * source
 
         return intervened_output
 
     def __str__(self):
         return f"SigmoidMaskIntervention()"
-    
 
-class LowRankRotatedSpaceIntervention(TrainableIntervention, DistributedRepresentationIntervention):
 
+class LowRankRotatedSpaceIntervention(
+    TrainableIntervention, DistributedRepresentationIntervention
+):
     """Intervention in the rotated space."""
 
     def __init__(self, **kwargs):
@@ -466,9 +480,7 @@ class LowRankRotatedSpaceIntervention(TrainableIntervention, DistributedRepresen
                 else:
                     sel_subspace_indices = []
                     for subspace in subspaces[0]:
-                        sel_subspace_indices.extend(
-                            self.subspace_partition[subspace]
-                        )
+                        sel_subspace_indices.extend(self.subspace_partition[subspace])
                 diff = rotated_source - rotated_base
                 assert rotated_base.shape[0] == len(subspaces)
                 batched_subspace = diff[..., sel_subspace_indices].unsqueeze(dim=1)
@@ -487,9 +499,7 @@ class LowRankRotatedSpaceIntervention(TrainableIntervention, DistributedRepresen
                     # render subspace as column indices
                     sel_subspace_indices = []
                     for subspace in subspaces[example_i]:
-                        sel_subspace_indices.extend(
-                            self.subspace_partition[subspace]
-                        )
+                        sel_subspace_indices.extend(self.subspace_partition[subspace])
 
                     LHS = diff[example_i, sel_subspace_indices].unsqueeze(dim=0)
                     RHS = self.rotate_layer.weight[..., sel_subspace_indices].T
@@ -510,7 +520,9 @@ class LowRankRotatedSpaceIntervention(TrainableIntervention, DistributedRepresen
         return f"LowRankRotatedSpaceIntervention()"
 
 
-class PCARotatedSpaceIntervention(BasisAgnosticIntervention, DistributedRepresentationIntervention):
+class PCARotatedSpaceIntervention(
+    BasisAgnosticIntervention, DistributedRepresentationIntervention
+):
     """Intervention in the pca space."""
 
     def __init__(self, **kwargs):
@@ -552,26 +564,27 @@ class PCARotatedSpaceIntervention(BasisAgnosticIntervention, DistributedRepresen
     def __str__(self):
         return f"PCARotatedSpaceIntervention()"
 
+
 class NoiseIntervention(ConstantSourceIntervention, LocalistRepresentationIntervention):
     """Noise intervention"""
-    
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         rs = np.random.RandomState(1)
         prng = lambda *shape: rs.randn(*shape)
-        noise_level = kwargs["noise_leve"] \
-            if "noise_leve" in kwargs else 0.13462981581687927 
-        self.register_buffer('noise', torch.from_numpy(
-            prng(1, 4, self.embed_dim)))
-        self.register_buffer('noise_level', torch.tensor(noise_level))
-        
+        noise_level = (
+            kwargs["noise_leve"] if "noise_leve" in kwargs else 0.13462981581687927
+        )
+        self.register_buffer("noise", torch.from_numpy(prng(1, 4, self.embed_dim)))
+        self.register_buffer("noise_level", torch.tensor(noise_level))
+
     def forward(self, base, source=None, subspaces=None):
         base[..., : self.interchange_dim] += self.noise * self.noise_level
         return base
 
     def __str__(self):
         return f"NoiseIntervention()"
- 
+
 
 class AutoencoderIntervention(TrainableIntervention):
     """Intervene in the latent space of an autoencoder."""
@@ -579,18 +592,19 @@ class AutoencoderIntervention(TrainableIntervention):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         if "latent_dim" not in kwargs:
-          raise ValueError('Missing latent_dim in kwargs.')
+            raise ValueError("Missing latent_dim in kwargs.")
         if "embed_dim" in kwargs:
-          self.embed_dim = torch.tensor(kwargs["embed_dim"])
-        self.autoencoder = AutoencoderLayer(
-                self.embed_dim, kwargs["latent_dim"])
+            self.embed_dim = torch.tensor(kwargs["embed_dim"])
+        self.autoencoder = AutoencoderLayer(self.embed_dim, kwargs["latent_dim"])
 
     def forward(self, base, source, subspaces=None):
         base_dtype = base.dtype
         base = base.to(self.autoencoder.encoder[0].weight.dtype)
         base_latent = self.autoencoder.encode(base)
         source_latent = self.autoencoder.encode(source)
-        base_latent[..., self.interchange_dim] = source_latent[..., self.interchange_dim]
+        base_latent[..., self.interchange_dim] = source_latent[
+            ..., self.interchange_dim
+        ]
         inv_output = self.autoencoder.decode(base_latent)
         return inv_output.to(base_dtype)
 

@@ -1,9 +1,13 @@
-import random, torch, types
+import random
+import types
+
 import numpy as np
+import torch
 from torch import nn
+
+from .constants import *
 from .intervenable_modelcard import *
 from .interventions import *
-from .constants import *
 
 
 def get_internal_model_type(model):
@@ -132,8 +136,8 @@ def get_dimension_by_component(model_type, model_config, component) -> int:
 def get_module_hook(model, representation, backend="native") -> nn.Module:
     """Render the intervening module with a hook."""
     if (
-        get_internal_model_type(model) in type_to_module_mapping and
-        representation.component
+        get_internal_model_type(model) in type_to_module_mapping
+        and representation.component
         in type_to_module_mapping[get_internal_model_type(model)]
     ):
         type_info = type_to_module_mapping[get_internal_model_type(model)][
@@ -232,8 +236,10 @@ def output_to_subcomponent(output, component, model_type, model_config):
     :param model_config: Hugging Face Model Config
     """
     subcomponent = output
-    if model_type in type_to_module_mapping and \
-        component in type_to_module_mapping[model_type]:
+    if (
+        model_type in type_to_module_mapping
+        and component in type_to_module_mapping[model_type]
+    ):
         split_last_dim_by = type_to_module_mapping[model_type][component][2:]
         if len(split_last_dim_by) != 0 and len(split_last_dim_by) > 2:
             raise ValueError(f"Unsupported {split_last_dim_by}.")
@@ -263,10 +269,14 @@ def gather_neurons(tensor_input, unit, unit_locations_as_list, device=None):
 
     if "." in unit:
         unit_locations = (
-            torch.tensor(unit_locations_as_list[0], 
-                         device=tensor_input.device if device is None else device),
-            torch.tensor(unit_locations_as_list[1], 
-                         device=tensor_input.device if device is None else device),
+            torch.tensor(
+                unit_locations_as_list[0],
+                device=tensor_input.device if device is None else device,
+            ),
+            torch.tensor(
+                unit_locations_as_list[1],
+                device=tensor_input.device if device is None else device,
+            ),
         )
         # we assume unit_locations is a tuple
         head_unit_locations = unit_locations[0]
@@ -293,7 +303,8 @@ def gather_neurons(tensor_input, unit, unit_locations_as_list, device=None):
         return tensor_output  # b, num_unit (h), num_unit (pos), d
     else:
         unit_locations = torch.tensor(
-            unit_locations_as_list, device=tensor_input.device if device is None else device
+            unit_locations_as_list,
+            device=tensor_input.device if device is None else device,
         )
 
         tensor_output = torch.gather(
@@ -315,7 +326,7 @@ def scatter_neurons(
     model_type,
     model_config,
     use_fast,
-    device=None
+    device=None,
 ):
     """Replace selected neurons in `tensor_input` by `replacing_tensor_input`.
 
@@ -342,15 +353,19 @@ def scatter_neurons(
     if "." in unit:
         # extra dimension for multi-level intervention
         unit_locations = (
-            torch.tensor(unit_locations_as_list[0], 
-                         device=tensor_input.device if device is None else device),
-            torch.tensor(unit_locations_as_list[1], 
-                         device=tensor_input.device if device is None else device),
+            torch.tensor(
+                unit_locations_as_list[0],
+                device=tensor_input.device if device is None else device,
+            ),
+            torch.tensor(
+                unit_locations_as_list[1],
+                device=tensor_input.device if device is None else device,
+            ),
         )
     else:
         unit_locations = torch.tensor(
-            unit_locations_as_list, 
-            device=tensor_input.device if device is None else device
+            unit_locations_as_list,
+            device=tensor_input.device if device is None else device,
         )
 
     # if tensor is splitted, we need to get the start and end indices
@@ -375,13 +390,13 @@ def scatter_neurons(
     elif unit in {"pos"}:
         if use_fast:
             # maybe this is all redundant, but maybe faster slightly?
-            tensor_input[
-                _batch_idx, unit_locations[0], start_index:end_index
-            ] = replacing_tensor_input
+            tensor_input[_batch_idx, unit_locations[0], start_index:end_index] = (
+                replacing_tensor_input
+            )
         else:
-            tensor_input[
-                _batch_idx, unit_locations, start_index:end_index
-            ] = replacing_tensor_input
+            tensor_input[_batch_idx, unit_locations, start_index:end_index] = (
+                replacing_tensor_input
+            )
         return tensor_input
     elif unit in {"h", "h.pos"}:
         # head-based scattering is only special for transformer-based model
@@ -410,9 +425,9 @@ def scatter_neurons(
                     _batch_idx, unit_locations[0][:, [i]], _slice_idx, unit_locations[1]
                 ] = replacing_tensor_input[:, i]
         else:
-            tensor_permute[
-                _batch_idx, unit_locations, _slice_idx
-            ] = replacing_tensor_input
+            tensor_permute[_batch_idx, unit_locations, _slice_idx] = (
+                replacing_tensor_input
+            )
         # permute back and reshape
         tensor_output = tensor_permute.permute(0, 3, 2, 1, 4)  # b_s, s, -1, num_h, d
         tensor_output = tensor_output.view(old_shape)  # b_s, s, -1*num_h*d
@@ -445,9 +460,11 @@ def do_intervention(
 
     # flatten
     original_base_shape = base_representation.shape
-    if len(original_base_shape) == 2 or (
-        isinstance(intervention, LocalistRepresentationIntervention)
-    ) or intervention.keep_last_dim:
+    if (
+        len(original_base_shape) == 2
+        or (isinstance(intervention, LocalistRepresentationIntervention))
+        or intervention.keep_last_dim
+    ):
         # no pos dimension, e.g., gru, or opt-out concate last two dims
         base_representation_f = base_representation
         source_representation_f = source_representation
@@ -473,9 +490,11 @@ def do_intervention(
     post_d = intervened_representation.shape[-1]
 
     # unflatten
-    if len(original_base_shape) == 2 or isinstance(
-        intervention, LocalistRepresentationIntervention
-    ) or intervention.keep_last_dim:
+    if (
+        len(original_base_shape) == 2
+        or isinstance(intervention, LocalistRepresentationIntervention)
+        or intervention.keep_last_dim
+    ):
         # no pos dimension, e.g., gru or opt-out concate last two dims
         pass
     elif len(original_base_shape) == 3:

@@ -37,7 +37,7 @@ class GPT2InterpretorHypernetwork(GPT2LMHeadModel):
     def __init__(self, config: GPT2InterpretorConfig):
         super().__init__(config)
         self.transformer = GPT2Model(config)
-        
+
         # only LM head gets special attention
         if config._attn_implementation == "flash_attention_2":
             _attention_cls = GPT2FlashAttention2
@@ -114,11 +114,11 @@ class GPT2InterpretorHypernetwork(GPT2LMHeadModel):
             and self.config.compute_position_ids
         ):
             position_ids = attention_mask.cumsum(-1)
-        
+
         encoder_hidden_states = torch.cat(
             (base_encoder_hidden_states, source_encoder_hidden_states), dim=1
         )
-        
+
         encoder_attention_mask = torch.cat(
             (base_encoder_attention_mask, source_encoder_attention_mask), dim=1
         )
@@ -138,7 +138,7 @@ class GPT2InterpretorHypernetwork(GPT2LMHeadModel):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
-        
+
         hidden_states = transformer_outputs[0]
 
         # Set device for model parallelism
@@ -243,10 +243,9 @@ class GPT2Interpretor(nn.Module):
         output_intervention_ratio: bool = False,
         batch_intervention_ratio: torch.Tensor = None,
     ) -> EditorModelOutput:
-        
         if intervention_layer is None:
-            intervention_layer = self.config.default_intervention_layer        
-        
+            intervention_layer = self.config.default_intervention_layer
+
         # Run target model for encoded hidden states
         if base_hidden_states is None:
             base_hidden_states = torch.stack(
@@ -255,7 +254,7 @@ class GPT2Interpretor(nn.Module):
                 ),  # seems to break while we are passing thru batch_size=1; the last (12th =) has different dimensions
                 dim=2,
             )
-        
+
         if source_hidden_states is None:
             source_hidden_states = torch.stack(
                 self._run_target_model_for_encoded_hidden_states(
@@ -263,18 +262,18 @@ class GPT2Interpretor(nn.Module):
                 ),
                 dim=2,
             )
-            
+
         # dimensions of target_hidden_states:
         # batch_size, token_sequence_length, num_layers = 13, resid_width = 768
         # Normalize along the last dimension
         base_normalization_factors = base_hidden_states.norm(dim=-1, keepdim=True)
         base_hidden_states = base_hidden_states / base_normalization_factors
-        
+
         source_normalization_factors = source_hidden_states.norm(dim=-1, keepdim=True)
         source_hidden_states = source_hidden_states / source_normalization_factors
 
         # Error catching:
-        
+
         # batch_intervention_ratio = (batch_size, source_token_sequence_length, base_token_sequence_length)
         if batch_intervention_ratio is not None:
             if output_intervention_ratio:
@@ -284,9 +283,8 @@ class GPT2Interpretor(nn.Module):
 
         # Run editor model, get edit vectors
         if batch_intervention_ratio is None:
-            
             n_layer = base_hidden_states.shape[2]
-            
+
             # collapsed_base_hidden_states (batch_size, token_sequence_length * num_layers, resid_width)
             collapsed_base_hidden_states = base_hidden_states.reshape(
                 base_hidden_states.shape[0],
@@ -295,13 +293,13 @@ class GPT2Interpretor(nn.Module):
             )
             # collapsed_base_attention_mask (batch_size, token_sequence_length * num_layers)
             collapsed_base_attention_mask = base_attention_mask.repeat(1, n_layer)
-            
+
             collapsed_source_hidden_states = source_hidden_states.reshape(
                 source_hidden_states.shape[0],
                 source_hidden_states.shape[1] * source_hidden_states.shape[2],
                 source_hidden_states.shape[3],
             )
-            
+
             collapsed_source_attention_mask = source_attention_mask.repeat(1, n_layer)
 
             interpretor_output = self.hypernetwork(
@@ -316,36 +314,46 @@ class GPT2Interpretor(nn.Module):
 
             # Multiply the outputs by normalization factors
             intervention_output, _, batch_intervention_ratio = interpretor_output
-            
+
             batch_intervention_ratio = batch_intervention_ratio.squeeze()
-            
-            
+
         source_output = self.target_model(
             input_ids=source_input_ids,
             attention_mask=source_attention_mask,
             output_hidden_states=True,
         )
-        
+
         source_hidden_states = source_output.hidden_states[intervention_layer]
-        intervention_matrix = torch.einsum("bij,bid->bijd", batch_intervention_ratio, source_hidden_states)
+        intervention_matrix = torch.einsum(
+            "bij,bid->bijd", batch_intervention_ratio, source_hidden_states
+        )
         intervention_matrix = intervention_matrix.sum(dim=1)
         base_intervention_weights = torch.sum(batch_intervention_ratio, dim=1)
-        
+
         # Run target model with edit vectors.
         # This adds the edit vectors to the given hidden state at the specified batch index, position, and layer
         def representation_swap(module, input, output):
-            res_diff = torch.einsum("bid,bi->bid", output[0].clone(), base_intervention_weights)
-            output[0][:] += (intervention_matrix - res_diff)
-            
+            res_diff = torch.einsum(
+                "bid,bi->bid", output[0].clone(), base_intervention_weights
+            )
+            output[0][:] += intervention_matrix - res_diff
+
         def embedding_representation_swap(module, input, output):
-            res_diff = torch.einsum("bid,bi->bid", output.clone(), base_intervention_weights)
-            output[:] += (intervention_matrix - res_diff)          
-        
+            res_diff = torch.einsum(
+                "bid,bi->bid", output.clone(), base_intervention_weights
+            )
+            output[:] += intervention_matrix - res_diff
+
         # Now editing the target model
         if intervention_layer == 0:
             hooks = [(self.target_model.transformer.wte, embedding_representation_swap)]
         else:
-            hooks = [(self.target_model.transformer.h[intervention_layer - 1], representation_swap)]
+            hooks = [
+                (
+                    self.target_model.transformer.h[intervention_layer - 1],
+                    representation_swap,
+                )
+            ]
 
         with add_fwd_hooks(hooks):
             # THIS IS THE LINE WHERE THE MODEL IS CALLED (AND THE EDITOR IS CALLED AT
@@ -356,9 +364,9 @@ class GPT2Interpretor(nn.Module):
                 position_ids=base_position_ids,
                 output_hidden_states=output_edited_hidden_states,
             )
-    
+
         logits = target_result.logits
-        
+
         output = EditorModelOutput(logits=logits)
         if output_edited_hidden_states:
             output.edited_hidden_states = target_result.hidden_states
