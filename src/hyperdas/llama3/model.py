@@ -482,7 +482,7 @@ class RavelInterpretorHypernetwork(nn.Module):
         
         return p
     
-    def _intervention_entropy(self, intervention_weight, mean=True, normalize=True, balanced=False, atticus=True):
+    def _intervention_entropy(self, intervention_weight, mean=True, normalize=False, balanced=False, atticus=False):
         
         """
         Normalize the weight along dim=-1; if weight is zero across all tokens, then return itself
@@ -511,18 +511,21 @@ class RavelInterpretorHypernetwork(nn.Module):
         
         if normalize:
             p = __normalize(p)
+            
         
         logp = torch.log(p + 1e-8)
         entropy = - torch.sum(p * logp, dim=-1)
         
+        
         if balanced:
             balanced_weight = __balance(intervention_weight[:, :-1, :])
-            entropy = entropy * balanced_weight
+            
+            entropy = entropy * torch.pow(balanced_weight, 0.5)
 
         if mean:
             entropy = torch.mean(entropy, dim=0)
             entropy = torch.mean(entropy)
-            
+        
         return entropy         
 
     def run_train(
@@ -659,17 +662,7 @@ class RavelInterpretorHypernetwork(nn.Module):
                     if apply_source_selection_sparsity_loss:
                         
                         source_selection_sparsity_loss = self._intervention_entropy(prediction.intervention_weight)
-                        
-                        """p = torch.sum(prediction.intervention_weight[:, :-1, :], dim=-1, keepdim=True)
-                        
-                        logp = torch.log(p + 1e-8)
-                        entropy = - torch.sum(p * logp, dim=-1)
-                        
-                        batch_mean_entropy = torch.mean(entropy, dim=0)
-                        batch_mean_entropy = torch.mean(batch_mean_entropy)
-                        
-                        source_selection_sparsity_loss = batch_mean_entropy"""
-                        
+                                                
                         step_sparsity_loss_weight = sparsity_loss_schedule[cur_steps]
                         training_loss += step_sparsity_loss_weight * source_selection_sparsity_loss
                     
