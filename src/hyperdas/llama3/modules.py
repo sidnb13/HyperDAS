@@ -51,6 +51,10 @@ class LlamaInterpretorConfig(LlamaConfig):
     ablate_base_token_attention: bool = False
     ablate_source_token_attention: bool = False
     break_asymmetric: bool = False
+    # For projective ridge regression
+    top_k_parameter: int = 128
+    lambda_parameter: int = 10
+    importance_power: int = -2
 
 
 class LlamaModelWithCrossAttention(LlamaModel):
@@ -567,8 +571,9 @@ class LlamaInterpretor(nn.Module):
                 self.das_module = QuasiProjectiveIntervention(
                     embed_dim=self.target_model.config.hidden_size,
                     dict_size=self.target_model.config.hidden_size,
-                    top_k_parameter=128,
-                    lambda_parameter=10,
+                    top_k_parameter=config.top_k_parameter,
+                    lambda_parameter=config.lambda_parameter,
+                    importance_power=config.importance_power,
                     return_penalty=True,
                     torch_dtype=config.torch_dtype,
                     compute_metrics=compute_metrics,

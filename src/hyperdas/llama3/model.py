@@ -35,6 +35,9 @@ class RavelInterpretorHypernetwork(nn.Module):
         ablate_base_token_attention=False,
         ablate_source_token_attention=False,
         break_asymmetric=False,
+        top_k_parameter=128,
+        lambda_parameter=10,
+        importance_power=-2,
         device="cuda",
         compute_metrics=False,
     ):
@@ -57,6 +60,11 @@ class RavelInterpretorHypernetwork(nn.Module):
             ablate_source_token_attention
         )
         self.interpretor_config.break_asymmetric = break_asymmetric
+
+        # Ridge/projective configs
+        self.interpretor_config.top_k_parameter = top_k_parameter
+        self.interpretor_config.lambda_parameter = lambda_parameter
+        self.interpretor_config.importance_power = importance_power
 
         self.interpretor = LlamaInterpretor(
             self.interpretor_config,
@@ -654,6 +662,7 @@ class RavelInterpretorHypernetwork(nn.Module):
         iso_loss_weight=1.0,
         lr=3e-4,
         weight_decay=0.01,
+        max_grad_norm=4.0,
         save_dir=None,
         save_model=False,
         schedule_sparsity_loss=True,
@@ -728,7 +737,6 @@ class RavelInterpretorHypernetwork(nn.Module):
             ) as pbar:
                 num_datapoints_in_epoch = 0
                 epoch_train_loss = 0
-                epoch_gradient_norm = 0
                 # Train loop
                 for step, batch in enumerate(train_loader):
                     if step >= total_steps:
@@ -836,7 +844,7 @@ class RavelInterpretorHypernetwork(nn.Module):
                         self.interpretor.zero_penalty()
 
                     if target_intervention_num is not None:
-                        assert type(target_intervention_num) == int
+                        assert isinstance(target_intervention_num, int)
 
                         source_target_intervention_num = self._intervention_number(
                             prediction.intervention_weight, mean=True
@@ -847,7 +855,9 @@ class RavelInterpretorHypernetwork(nn.Module):
                         training_loss += intervention_number_loss
 
                     training_loss.backward()
-                    nn.utils.clip_grad_norm_(self.parameters(), 4.0)
+                    grad_norm = nn.utils.clip_grad_norm_(
+                        self.parameters(), max_grad_norm
+                    )
                     self.opt.step()
                     # metrics
                     epoch_train_loss += training_loss.item() * current_batch_size
@@ -858,9 +868,11 @@ class RavelInterpretorHypernetwork(nn.Module):
                         self.interpretor.das_module.orthogonalize_rotation_matrix()"""
 
                     metrics = {
-                        "step": cur_steps,
+                        "counters/step": cur_steps,
+                        "counters/epoch": cur_steps / len(train_loader),
                         "train_batch_prediction_loss": prediction_loss.item(),
                         "train_batch_sparsity_loss": source_selection_sparsity_loss.item(),
+                        "grad_norm": grad_norm.item(),
                         **prediction.metrics,
                     }
                     if target_intervention_num is not None:

@@ -620,10 +620,7 @@ class QuasiProjectiveIntervention(
 
         # Add condition number to metrics
         if self.compute_metrics and self.training:
-            with torch.no_grad():
-                # Compute condition number
-                condition_number = torch.linalg.cond(regularized_XTX)
-                metrics["condition_number"] = condition_number.cpu().numpy()
+            pass
 
         # Cast ridge_coeffs back to the original dtype
         ridge_coeffs = ridge_coeffs.to(X.dtype)
@@ -679,19 +676,15 @@ class QuasiProjectiveIntervention(
                 reshaped_values = selected_dictionary.view(
                     top_k_values.shape[0], -1, self.top_k_parameter
                 ).float()
-                metrics["dictionary_topk_rank"] = torch.linalg.matrix_rank(
-                    reshaped_values
-                ).tolist()
+                metrics["avg_dictionary_topk_rank"] = (
+                    torch.linalg.matrix_rank(reshaped_values).float().mean().item()
+                )
                 metrics["intervention_norm"] = (
                     (source_interchange - base_interchange).norm().item()
                 )
                 metrics["selected_dictionary_nn_l0"] = (
                     (selected_dictionary > 0).float().sum(1).mean().item()
                 )
-
-                # Ridge Regression Condition Number
-                metrics["base_condition_number"] = base_metrics["condition_number"]
-                metrics["source_condition_number"] = source_metrics["condition_number"]
 
                 # Projection Quality: project onto col space of selected_dictionary
                 base_proj = torch.matmul(base, selected_dictionary.transpose(-2, -1))

@@ -41,6 +41,12 @@ ablate_source_token_attention: false
 break_asymmetric: false
 subspace_module: "ReflectSelect"
 weight_decay: 0.01
+max_grad_norm: 4.0
+
+# ridge projective parameters
+top_k_parameter: 128
+lambda_parameter: 10
+importance_power: -2
 
 # Specific parameters for train_ablation.py
 # (Add any specific parameters here)

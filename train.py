@@ -1,6 +1,5 @@
 import argparse
 import os
-from sqlite3 import InterfaceError
 
 import hydra
 from datasets import load_from_disk
@@ -8,7 +7,6 @@ from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 
-import inference
 import wandb
 from src.hyperdas.data_utils import (
     get_ravel_collate_fn,
@@ -16,146 +14,103 @@ from src.hyperdas.data_utils import (
 
 
 def run_experiment(
-    log_wandb=True,
-    wandb_project="hypernetworks-interpretor",
-    wandb_run_name=None,
-    inference_modes=["default", "bidding_argmax"],
-    intervention_layer=15,
-    subspace_module="ReflectSelect",
-    model_name_or_path="./models/llama3-8b",
-    load_trained_from=None,
-    batch_size=8,
-    source_suffix_visibility=False,
-    base_suffix_visibility=False,
-    source_selection_sparsity_loss=True,
-    sparsity_loss_weight_start=0.5,
-    sparsity_loss_weight_end=1,
-    sparsity_loss_warm_up_ratio=0.1,
-    save_dir=None,
-    n_epochs=1,
-    n_steps=-1,
-    das_dimension=None,
-    lr=3e-5,
-    weight_decay=0.01,
-    eval_per_steps=100,
-    checkpoint_per_steps=500,
-    test_path=None,
-    train_path=None,
-    causal_loss_weight=1,
-    iso_loss_weight=1,
-    num_decoders=8,
-    initialize_from_scratch=False,
-    ablate_base_token_attention=False,
-    ablate_source_token_attention=False,
-    save_model=False,
-    break_asymmetric=False,
-    target_intervention_num=None,
-    compute_metrics=False,
-    **kwargs,
+    config: DictConfig,
 ):
     """if save_dir is not None:
     save_dir = os.path.join("./models", save_dir)"""
-
-    if log_wandb:
+    if config.log_wandb:
         wandb.init(
-            project=wandb_project,
-            name=wandb_run_name,
-            config={
-                "targetmodel": model_name_or_path,
-                "editormodel": model_name_or_path,
-                "dataset": "ravel",
-                "intervention_layer": intervention_layer,
-                "subspace_module": subspace_module,
-                "source_suffix_visibility": source_suffix_visibility,
-                "base_suffix_visibility": base_suffix_visibility,
-                "das_dimension": das_dimension,
-            },
+            project=config.wandb_project,
+            name=config.wandb_run_name,
+            config=OmegaConf.to_container(config),
         )
 
-    if "default" in inference_modes:
-        inference_modes.remove("default")
-        inference_modes.append(None)
+    if "default" in config.inference_modes:
+        config.inference_modes.remove("default")
+        config.inference_modes.append(None)
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+    tokenizer = AutoTokenizer.from_pretrained(config.model_name_or_path)
     tokenizer.pad_token = tokenizer.eos_token
 
     tokenizer.padding_side = "left"
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.pad_token_id = tokenizer.eos_token_id
 
-    train_set = load_from_disk(train_path)
-    test_set = load_from_disk(test_path)
+    train_set = load_from_disk(config.train_path)
+    test_set = load_from_disk(config.test_path)
 
     # train_set = Dataset.from_list([d for d in train_set if d["attribute_type"] == "causal"])
     # test_set = Dataset.from_list([d for d in test_set if d["attribute_type"] == "causal"])
 
     collate_fn = get_ravel_collate_fn(
         tokenizer,
-        source_suffix_visibility=source_suffix_visibility,
-        base_suffix_visibility=base_suffix_visibility,
+        source_suffix_visibility=config.source_suffix_visibility,
+        base_suffix_visibility=config.base_suffix_visibility,
         add_space_before_target=True,
-        contain_entity_position="groundtruth" in inference_modes,
+        contain_entity_position="groundtruth" in config.inference_modes,
     )
 
     data_loader = DataLoader(
-        train_set, batch_size=batch_size, collate_fn=collate_fn, shuffle=True
+        train_set, batch_size=config.batch_size, collate_fn=collate_fn, shuffle=True
     )
 
     test_data_loader = DataLoader(
-        test_set, batch_size=batch_size, collate_fn=collate_fn, shuffle=True
+        test_set, batch_size=config.batch_size, collate_fn=collate_fn, shuffle=True
     )
 
     from src.hyperdas.llama3.model import RavelInterpretorHypernetwork
 
     hypernetwork = RavelInterpretorHypernetwork(
-        model_name_or_path=model_name_or_path,
+        model_name_or_path=config.model_name_or_path,
         num_editing_heads=32,
-        intervention_layer=intervention_layer,
-        subspace_module=subspace_module,
-        das_dimension=das_dimension,
-        chop_editor_at_layer=num_decoders,
-        initialize_from_scratch=initialize_from_scratch,
-        ablate_base_token_attention=ablate_base_token_attention,
-        ablate_source_token_attention=ablate_source_token_attention,
-        break_asymmetric=break_asymmetric,
+        intervention_layer=config.intervention_layer,
+        subspace_module=config.subspace_module,
+        das_dimension=config.das_dimension,
+        chop_editor_at_layer=config.num_decoders,
+        initialize_from_scratch=config.initialize_from_scratch,
+        ablate_base_token_attention=config.ablate_base_token_attention,
+        ablate_source_token_attention=config.ablate_source_token_attention,
+        break_asymmetric=config.break_asymmetric,
+        top_k_parameter=config.top_k_parameter,
+        lambda_parameter=config.lambda_parameter,
+        importance_power=config.importance_power,
         device="cuda",
-        compute_metrics=compute_metrics,
+        compute_metrics=config.compute_metrics,
     )
 
-    if load_trained_from is not None:
-        hypernetwork.load_model(load_trained_from)
+    if config.load_trained_from is not None:
+        hypernetwork.load_model(config.load_trained_from)
 
     # current problem: 1728 / 30864
     hypernetwork.run_train(
         train_loader=data_loader,
         test_loader=test_data_loader,
-        inference_modes=inference_modes,
-        epochs=n_epochs,
-        steps=n_steps,
-        checkpoint_per_steps=checkpoint_per_steps,
-        eval_per_steps=eval_per_steps,
-        save_dir=save_dir,
-        apply_source_selection_sparsity_loss=source_selection_sparsity_loss,
-        sparsity_loss_weight_start=sparsity_loss_weight_start,
-        sparsity_loss_weight_end=sparsity_loss_weight_end,
-        sparsity_loss_warm_up_ratio=sparsity_loss_warm_up_ratio,
-        causal_loss_weight=causal_loss_weight,
-        iso_loss_weight=iso_loss_weight,
-        weight_decay=weight_decay,
-        lr=lr,
-        save_model=save_model,
-        target_intervention_num=target_intervention_num,
+        inference_modes=config.inference_modes,
+        epochs=config.n_epochs,
+        steps=config.n_steps,
+        checkpoint_per_steps=config.checkpoint_per_steps,
+        eval_per_steps=config.eval_per_steps,
+        save_dir=config.save_dir,
+        apply_source_selection_sparsity_loss=config.source_selection_sparsity_loss,
+        sparsity_loss_weight_start=config.sparsity_loss_weight_start,
+        sparsity_loss_weight_end=config.sparsity_loss_weight_end,
+        sparsity_loss_warm_up_ratio=config.sparsity_loss_warm_up_ratio,
+        causal_loss_weight=config.causal_loss_weight,
+        iso_loss_weight=config.iso_loss_weight,
+        weight_decay=config.weight_decay,
+        max_grad_norm=config.max_grad_norm,
+        lr=config.lr,
+        save_model=config.save_model,
+        target_intervention_num=config.target_intervention_num,
     )
 
-    if log_wandb:
+    if config.log_wandb:
         wandb.finish()
 
 
 @hydra.main(version_base=None, config_path="config", config_name="config")
 def hydra_main(cfg: DictConfig):
-    # Convert DictConfig to a regular dictionary
-    args = OmegaConf.to_container(cfg, resolve=True)
-    run_experiment(**args)
+    run_experiment(cfg)
 
 
 def argparse_main():
@@ -235,7 +190,7 @@ def argparse_main():
 
     args = parser.parse_args()
     args = dict(args.__dict__)
-    run_experiment(**args)
+    run_experiment(OmegaConf.create(args))
 
 
 if __name__ == "__main__":
