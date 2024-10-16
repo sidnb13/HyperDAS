@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import contextlib
-from dataclasses import dataclass
-from typing import List, Optional
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 
 import torch
 from transformers import PretrainedConfig
@@ -71,6 +71,7 @@ class InterpretorModelOutput(BaseModelOutput):
     vanilla_base_hidden_states: Optional[torch.Tensor] = None
     vanilla_source_hidden_states: Optional[torch.Tensor] = None
     loss: Optional[torch.Tensor] = None
+    metrics: Dict[str, Any] = None
 
 
 @contextlib.contextmanager

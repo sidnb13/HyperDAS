@@ -4,9 +4,10 @@ defaults:
   - override hydra/job_logging: disabled
 
 # Common parameters
+compute_metrics: false # whether to compute metrics for das modules and log
 log_wandb: false
-wandb_project: "HyperDAS"
-wandb_run_name: null
+wandb_project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
+wandb_run_name: ${oc.env:WANDB_RUN_NAME,"${subspace_module}_${now:%Y%m%d_%H%M%S}"}
 intervention_layer: 15
 load_trained_from: null
 n_epochs: 5

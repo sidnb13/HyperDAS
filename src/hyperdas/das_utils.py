@@ -1,7 +1,9 @@
-from abc import ABC, abstractmethod
+from abc import abstractmethod
+from typing import Dict, Tuple
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from transformers.models.llama.modeling_llama import LlamaRMSNorm
 
 
@@ -36,6 +38,7 @@ class Intervention(nn.Module):
         super().__init__()
         self.trainable = False
         self.is_source_constant = False
+        self.compute_metrics = kwargs.get("compute_metrics", False)
 
         self.keep_last_dim = (
             kwargs["keep_last_dim"] if "keep_last_dim" in kwargs else False
@@ -93,7 +96,7 @@ class Intervention(nn.Module):
             self.interchange_dim = interchange_dim
 
     @abstractmethod
-    def forward(self, base, source, subspaces=None):
+    def forward(self, base, source, subspaces=None) -> Tuple[torch.Tensor, Dict]:
         pass
 
 
@@ -232,6 +235,7 @@ class BoundlessRotatedSpaceIntervention(
         )
 
     def forward(self, base, source, batch_size):
+        metrics = {}
         # batch_size = base.shape[0]
         rotated_base = self.rotate_layer(base)
         rotated_source = self.rotate_layer(source)
@@ -259,10 +263,10 @@ class BoundlessRotatedSpaceIntervention(
         ) * rotated_base + boundary_mask * rotated_source
         # inverse output
         output = torch.matmul(rotated_output, self.rotate_layer.weight.T)
-        return output.to(base.dtype)
+        return output.to(base.dtype), metrics
 
     def __str__(self):
-        return f"BoundlessRotatedSpaceIntervention()"
+        return f"BoundlessRotatedSpaceIntervention(embed_dim={self.embed_dim}, low_rank_dimension={self.low_rank_dimension}, temperature={self.temperature:.2f}, intervention_boundaries={self.intervention_boundaries.item():.2f})"
 
 
 class RotatedSpaceIntervention(
@@ -300,6 +304,7 @@ class RotatedSpaceIntervention(
         )
 
     def forward(self, base, source, batch_size):
+        metrics = {}
         # batch_size = base.shape[0]
         rotated_base = self.rotate_layer(base)
         rotated_source = self.rotate_layer(source)
@@ -318,10 +323,10 @@ class RotatedSpaceIntervention(
         ) * rotated_base + boundary_mask * rotated_source
         # inverse output
         output = torch.matmul(rotated_output, self.rotate_layer.weight.T)
-        return output.to(base.dtype)
+        return output.to(base.dtype), metrics
 
     def __str__(self):
-        return f"RotatedSpaceIntervention()"
+        return f"RotatedSpaceIntervention(embed_dim={self.embed_dim}, intervention_dim={self.intervention_dim})"
 
 
 class LowRankRotatedSpaceIntervention(
@@ -354,6 +359,7 @@ class LowRankRotatedSpaceIntervention(
         pass
 
     def forward(self, base, source, batch_size=None):
+        metrics = {}
         rotated_base = self.rotate_layer(base)
         rotated_source = self.rotate_layer(source)
 
@@ -361,10 +367,10 @@ class LowRankRotatedSpaceIntervention(
             (rotated_source - rotated_base), self.rotate_layer.weight.T
         )
 
-        return output.to(base.dtype)
+        return output.to(base.dtype), metrics
 
     def __str__(self):
-        return f"LowRankRotatedSpaceIntervention()"
+        return f"LowRankRotatedSpaceIntervention(embed_dim={self.embed_dim}, low_rank_dimension={self.rotate_layer.low_rank_dimension}, sparsity={self.sparsity:.4f})"
 
 
 class SelectiveLowRankRotatedSpaceIntervention(
@@ -413,6 +419,7 @@ class SelectiveLowRankRotatedSpaceIntervention(
         return None
 
     def forward(self, base, source, hidden_states):
+        metrics = {}
         normalized_hidden_state = self.input_layernorm(hidden_states[:, -1, :])
         mask = self.mask_projection(normalized_hidden_state)
 
@@ -424,10 +431,10 @@ class SelectiveLowRankRotatedSpaceIntervention(
         output = base + torch.matmul(
             mask * (rotated_source - rotated_base), self.rotate_layer.weight.T
         )
-        return output.to(base.dtype)
+        return output.to(base.dtype), metrics
 
     def __str__(self):
-        return f"SelectiveLowRankRotatedSpaceIntervention()"
+        return f"SelectiveLowRankRotatedSpaceIntervention(embed_dim={self.embed_dim}, low_rank_dimension={self.rotate_layer.low_rank_dimension}, sparsity={self.sparsity:.4f}, temperature={self.temperature.item():.2f})"
 
 
 class ReflectiveLowRankRotatedSpaceIntervention(
@@ -479,6 +486,7 @@ class ReflectiveLowRankRotatedSpaceIntervention(
         return None
 
     def forward(self, base, source, hidden_states):
+        metrics = {}
         normalized_hidden_state = self.input_layernorm(hidden_states[:, -1, :])
         rv = self.rv_proj(normalized_hidden_state)
         rv = rv / torch.norm(rv, dim=-1, keepdim=True)
@@ -498,10 +506,10 @@ class ReflectiveLowRankRotatedSpaceIntervention(
         output = base + torch.matmul(
             (rotated_source - rotated_base), torch.transpose(reflected_weight, 1, 2)
         )
-        return output.to(base.dtype)
+        return output.to(base.dtype), metrics
 
     def __str__(self):
-        return f"ReflectiveLowRankRotatedSpaceIntervention()"
+        return f"ReflectiveLowRankRotatedSpaceIntervention(embed_dim={self.embed_dim}, low_rank_dimension={self.low_rank_dimension}, sparsity={self.sparsity:.4f})"
 
 
 class QuasiProjectiveIntervention(
@@ -585,6 +593,8 @@ class QuasiProjectiveIntervention(
         # Y: batch x seq x d_embed
         # importance_scores: batch x k
 
+        metrics = {}
+
         # denominator scores will be a component inside the matrix inversion
         # Note that alpha < 0 implies that denominator_scores_i is low for the most important features
         denominator_scores = (
@@ -608,15 +618,23 @@ class QuasiProjectiveIntervention(
             regularized_XTX, XTY
         )
 
+        # Add condition number to metrics
+        if self.compute_metrics and self.training:
+            with torch.no_grad():
+                # Compute condition number
+                condition_number = torch.linalg.cond(regularized_XTX)
+                metrics["condition_number"] = condition_number.cpu().numpy()
+
         # Cast ridge_coeffs back to the original dtype
         ridge_coeffs = ridge_coeffs.to(X.dtype)
 
         # Multiply thru by X
         predictions = torch.matmul(ridge_coeffs.transpose(-2, -1), X)
 
-        return predictions
+        return predictions, metrics
 
     def forward(self, base, source, hidden_states):
+        metrics = {}
         # Base:     batch x seq x d_embed
         # Source:   batch x seq x d_embed
         # Hidden:   batch x instruction_seq x d_embed
@@ -641,19 +659,55 @@ class QuasiProjectiveIntervention(
         # Select rows of the dictionary according to top_k_indices
         selected_dictionary = self.basis_dictionary(top_k_indices)
 
-        base_interchange = self.compute_ridge(
+        base_interchange, base_metrics = self.compute_ridge(
             selected_dictionary,
             base,
             top_k_values,
             importance_power=self.importance_power,
         )
-        source_interchange = self.compute_ridge(
+        source_interchange, source_metrics = self.compute_ridge(
             selected_dictionary,
             source,
             top_k_values,
             importance_power=self.importance_power,
         )
         output = base + (source_interchange - base_interchange)
+
+        if self.compute_metrics and self.training:
+            with torch.no_grad():
+                # Reshape top_k_values to [batch, d_embed, k]
+                reshaped_values = selected_dictionary.view(
+                    top_k_values.shape[0], -1, self.top_k_parameter
+                ).float()
+                metrics["dictionary_topk_rank"] = torch.linalg.matrix_rank(
+                    reshaped_values
+                ).tolist()
+                metrics["intervention_norm"] = (
+                    (source_interchange - base_interchange).norm().item()
+                )
+                metrics["selected_dictionary_nn_l0"] = (
+                    (selected_dictionary > 0).float().sum(1).mean().item()
+                )
+
+                # Ridge Regression Condition Number
+                metrics["base_condition_number"] = base_metrics["condition_number"]
+                metrics["source_condition_number"] = source_metrics["condition_number"]
+
+                # Projection Quality: project onto col space of selected_dictionary
+                base_proj = torch.matmul(base, selected_dictionary.transpose(-2, -1))
+                base_proj = torch.matmul(base_proj, selected_dictionary)
+                metrics["projection_quality"] = (
+                    F.cosine_similarity(base, base_proj).mean().item()
+                )
+
+                # Intervention Directional Change
+                metrics["angular_change"] = (
+                    torch.acos(
+                        F.cosine_similarity(base, output).clamp(-1 + 1e-6, 1 - 1e-6)
+                    )
+                    .mean()
+                    .item()
+                )
 
         if self.return_penalty:
             penalty = torch.sum(
@@ -668,7 +722,7 @@ class QuasiProjectiveIntervention(
         # penalty is sensitive to lambda_parameter, and it controls how much the solutions are influenced by each dimension
         # ...in one of the limits, as you tune up lambda_parameter really big or small, you should get negligible interchange
         # (check this! as a sanity-check!)
-        return output.to(base.dtype)
+        return output.to(base.dtype), metrics
 
     def __str__(self):
         return f"QuasiProjectedIntervention(top_k={self.top_k_parameter}, importance_power={self.importance_power}, lambda_parameter={self.lambda_parameter}, return_penalty={self.return_penalty})"

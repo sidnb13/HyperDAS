@@ -1,16 +1,16 @@
 import json
 import os
-from math import ceil, floor
+from math import ceil
 
 import matplotlib.pyplot as plt
 import seaborn as sns
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import wandb
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
+import wandb
 from logger import get_logger
 
 from ..das_utils import QuasiProjectiveIntervention
@@ -36,6 +36,7 @@ class RavelInterpretorHypernetwork(nn.Module):
         ablate_source_token_attention=False,
         break_asymmetric=False,
         device="cuda",
+        compute_metrics=False,
     ):
         super().__init__()
 
@@ -62,6 +63,7 @@ class RavelInterpretorHypernetwork(nn.Module):
             subspace_module=subspace_module,
             das_dimension=das_dimension,
             device=device,
+            compute_metrics=compute_metrics,
         )
         self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
 
@@ -859,6 +861,7 @@ class RavelInterpretorHypernetwork(nn.Module):
                         "step": cur_steps,
                         "train_batch_prediction_loss": prediction_loss.item(),
                         "train_batch_sparsity_loss": source_selection_sparsity_loss.item(),
+                        **prediction.metrics,
                     }
                     if target_intervention_num is not None:
                         metrics["train_batch_#intervention_loss"] = (

@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import os
-from contextlib import nullcontext
 from typing import Any, List, Mapping, Optional, Tuple, TypeVar, Union
 
-import accelerate
 import torch
 import torch.nn as nn
 from transformers import (
@@ -271,203 +269,175 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
             f"llama_interpretor_hypernetwork_{self.config.name_or_path.replace('/', '_')}.pt",
         )
 
-        # Skip weight initialization until we need to
-        with accelerate.init_empty_weights() if os.path.exists(
-            self.cache_path
-        ) else nullcontext():
-            self.model = LlamaModelWithCrossAttention.from_pretrained(
-                self.config.name_or_path, torch_dtype=self.config.torch_dtype
+        logger.debug("Loading pretrained model for LlamaModelWithCrossAttention")
+        self.model = LlamaModelWithCrossAttention.from_pretrained(
+            self.config.name_or_path, torch_dtype=self.config.torch_dtype
+        )
+        self.lm_head = InterpretorUnembedCrossAttention(
+            config=self.config, layer_idx=self.config.chop_editor_at_layer
+        ).to(dtype=self.config.torch_dtype)
+
+        # Model parallel
+        self.model_parallel = False
+        self.device_map = None
+
+        if not os.path.exists(self.cache_path):
+            # Initialize weights and apply final processing
+            logger.debug("Initializing LlamaInterpretorHypernetwork weights...")
+            self.post_init()
+            # Save the initialized model to cache
+            logger.debug(f"Saving initialized model to {self.cache_path}")
+            torch.save(self.state_dict(), self.cache_path)
+        else:
+            logger.debug("Loading cached LlamaInterpretorHypernetwork...")
+            state_dict = torch.load(
+                self.cache_path, weights_only=True, map_location=self.device
             )
-            self.lm_head = InterpretorUnembedCrossAttention(
-                config=self.config, layer_idx=self.config.chop_editor_at_layer
+            self.load_state_dict(state_dict, assign=True)
+
+        # prune layers and add cross attn heads
+        self.model.layers = self.model.layers[: self.config.chop_editor_at_layer]
+        cross_attn_layers = list(range(self.config.chop_editor_at_layer))
+
+        for i, layer in enumerate(self.model.layers):
+            if i not in cross_attn_layers:
+                continue
+
+            self.model.layers[i] = LlamaDecoderLayerWithDoubleCrossAttention(
+                self.config, i
             ).to(dtype=self.config.torch_dtype)
 
-        if os.path.exists(self.cache_path):
-            logger.debug("Loading cached LlamaInterpretorHypernetwork...")
-            state_dict = torch.load(self.cache_path)
-            self.load_state_dict(state_dict)
-        else:
-            # Model parallel
-            self.model_parallel = False
-            self.device_map = None
-            # Initialize weights and apply final processing
-            self.post_init()
+            if not self.config.initialize_from_scratch:
+                original_q_weights = layer.self_attn.q_proj.weight
+                original_k_weights = layer.self_attn.k_proj.weight
+                original_v_weights = layer.self_attn.v_proj.weight
+                original_o_weights = layer.self_attn.o_proj.weight
 
-            # prune layers and add cross attn heads
-            self.model.layers = self.model.layers[: self.config.chop_editor_at_layer]
-            cross_attn_layers = list(range(self.config.chop_editor_at_layer))
+                original_mlp_gate_proj_weights = layer.mlp.gate_proj.weight
+                original_mlp_up_proj_weights = layer.mlp.up_proj.weight
+                original_mlp_down_proj_weights = layer.mlp.down_proj.weight
 
-            for i, layer in enumerate(self.model.layers):
-                if i not in cross_attn_layers:
-                    continue
+                original_input_layernorm_weights = layer.input_layernorm.weight
+                original_post_attention_layernorm = (
+                    layer.post_attention_layernorm.weight
+                )
 
-                self.model.layers[i] = LlamaDecoderLayerWithDoubleCrossAttention(
-                    self.config, i
-                ).to(dtype=self.config.torch_dtype)
+                # with torch.no_grad():
+                # Initialize the new layer with these parameters
+                self.model.layers[i].self_attn.q_proj.weight = nn.Parameter(
+                    original_q_weights
+                )
+                self.model.layers[i].self_attn.k_proj.weight = nn.Parameter(
+                    original_k_weights
+                )
+                self.model.layers[i].self_attn.v_proj.weight = nn.Parameter(
+                    original_v_weights
+                )
+                self.model.layers[i].self_attn.o_proj.weight = nn.Parameter(
+                    original_o_weights
+                )
 
-                if not self.config.initialize_from_scratch:
-                    original_q_weights = layer.self_attn.q_proj.weight
-                    original_k_weights = layer.self_attn.k_proj.weight
-                    original_v_weights = layer.self_attn.v_proj.weight
-                    original_o_weights = layer.self_attn.o_proj.weight
-
-                    original_mlp_gate_proj_weights = layer.mlp.gate_proj.weight
-                    original_mlp_up_proj_weights = layer.mlp.up_proj.weight
-                    original_mlp_down_proj_weights = layer.mlp.down_proj.weight
-
-                    original_input_layernorm_weights = layer.input_layernorm.weight
-                    original_post_attention_layernorm = (
-                        layer.post_attention_layernorm.weight
-                    )
-
-                    # with torch.no_grad():
-                    # Initialize the new layer with these parameters
-                    self.model.layers[i].self_attn.q_proj.weight = nn.Parameter(
+                if not self.config.ablate_source_token_attention:
+                    self.model.layers[i].source_cross_attn.q_proj.weight = nn.Parameter(
                         original_q_weights
                     )
-                    self.model.layers[i].self_attn.k_proj.weight = nn.Parameter(
+                    self.model.layers[i].source_cross_attn.k_proj.weight = nn.Parameter(
                         original_k_weights
                     )
-                    self.model.layers[i].self_attn.v_proj.weight = nn.Parameter(
+                    self.model.layers[i].source_cross_attn.v_proj.weight = nn.Parameter(
                         original_v_weights
                     )
-                    self.model.layers[i].self_attn.o_proj.weight = nn.Parameter(
+                    self.model.layers[i].source_cross_attn.o_proj.weight = nn.Parameter(
                         original_o_weights
                     )
+                    self.model.layers[
+                        i
+                    ].source_cross_attn_input_layernorm.weight = nn.Parameter(
+                        original_input_layernorm_weights
+                    )
+
+                if not self.config.ablate_base_token_attention:
+                    self.model.layers[i].base_cross_attn.q_proj.weight = nn.Parameter(
+                        original_q_weights
+                    )
+                    self.model.layers[i].base_cross_attn.k_proj.weight = nn.Parameter(
+                        original_k_weights
+                    )
+                    self.model.layers[i].base_cross_attn.v_proj.weight = nn.Parameter(
+                        original_v_weights
+                    )
+                    self.model.layers[i].base_cross_attn.o_proj.weight = nn.Parameter(
+                        original_o_weights
+                    )
+                    self.model.layers[
+                        i
+                    ].base_cross_attn_input_layernorm.weight = nn.Parameter(
+                        original_input_layernorm_weights
+                    )
+
+                if self.config.attention_bias:
+                    original_q_bias = layer.self_attn.q_proj.bias
+                    original_k_bias = layer.self_attn.k_proj.bias
+                    original_v_bias = layer.self_attn.v_proj.bias
+                    original_o_bias = layer.self_attn.o_proj.bias
 
                     if not self.config.ablate_source_token_attention:
                         self.model.layers[
                             i
-                        ].source_cross_attn.q_proj.weight = nn.Parameter(
-                            original_q_weights
-                        )
+                        ].source_cross_attn.q_proj.bias = nn.Parameter(original_q_bias)
                         self.model.layers[
                             i
-                        ].source_cross_attn.k_proj.weight = nn.Parameter(
-                            original_k_weights
-                        )
+                        ].source_cross_attn.k_proj.bias = nn.Parameter(original_k_bias)
                         self.model.layers[
                             i
-                        ].source_cross_attn.v_proj.weight = nn.Parameter(
-                            original_v_weights
-                        )
+                        ].source_cross_attn.v_proj.bias = nn.Parameter(original_v_bias)
                         self.model.layers[
                             i
-                        ].source_cross_attn.o_proj.weight = nn.Parameter(
-                            original_o_weights
-                        )
-                        self.model.layers[
-                            i
-                        ].source_cross_attn_input_layernorm.weight = nn.Parameter(
-                            original_input_layernorm_weights
-                        )
+                        ].source_cross_attn.o_proj.bias = nn.Parameter(original_o_bias)
 
                     if not self.config.ablate_base_token_attention:
-                        self.model.layers[
-                            i
-                        ].base_cross_attn.q_proj.weight = nn.Parameter(
-                            original_q_weights
-                        )
-                        self.model.layers[
-                            i
-                        ].base_cross_attn.k_proj.weight = nn.Parameter(
-                            original_k_weights
-                        )
-                        self.model.layers[
-                            i
-                        ].base_cross_attn.v_proj.weight = nn.Parameter(
-                            original_v_weights
-                        )
-                        self.model.layers[
-                            i
-                        ].base_cross_attn.o_proj.weight = nn.Parameter(
-                            original_o_weights
-                        )
-                        self.model.layers[
-                            i
-                        ].base_cross_attn_input_layernorm.weight = nn.Parameter(
-                            original_input_layernorm_weights
-                        )
-
-                    if self.config.attention_bias:
-                        original_q_bias = layer.self_attn.q_proj.bias
-                        original_k_bias = layer.self_attn.k_proj.bias
-                        original_v_bias = layer.self_attn.v_proj.bias
-                        original_o_bias = layer.self_attn.o_proj.bias
-
-                        if not self.config.ablate_source_token_attention:
-                            self.model.layers[
-                                i
-                            ].source_cross_attn.q_proj.bias = nn.Parameter(
-                                original_q_bias
-                            )
-                            self.model.layers[
-                                i
-                            ].source_cross_attn.k_proj.bias = nn.Parameter(
-                                original_k_bias
-                            )
-                            self.model.layers[
-                                i
-                            ].source_cross_attn.v_proj.bias = nn.Parameter(
-                                original_v_bias
-                            )
-                            self.model.layers[
-                                i
-                            ].source_cross_attn.o_proj.bias = nn.Parameter(
-                                original_o_bias
-                            )
-
-                        if not self.config.ablate_base_token_attention:
-                            self.model.layers[
-                                i
-                            ].base_cross_attn.q_proj.bias = nn.Parameter(
-                                original_q_bias
-                            )
-                            self.model.layers[
-                                i
-                            ].base_cross_attn.k_proj.bias = nn.Parameter(
-                                original_k_bias
-                            )
-                            self.model.layers[
-                                i
-                            ].base_cross_attn.v_proj.bias = nn.Parameter(
-                                original_v_bias
-                            )
-                            self.model.layers[
-                                i
-                            ].base_cross_attn.o_proj.bias = nn.Parameter(
-                                original_o_bias
-                            )
-
-                        self.model.layers[i].self_attn.q_proj.bias = nn.Parameter(
+                        self.model.layers[i].base_cross_attn.q_proj.bias = nn.Parameter(
                             original_q_bias
                         )
-                        self.model.layers[i].self_attn.k_proj.bias = nn.Parameter(
+                        self.model.layers[i].base_cross_attn.k_proj.bias = nn.Parameter(
                             original_k_bias
                         )
-                        self.model.layers[i].self_attn.v_proj.bias = nn.Parameter(
+                        self.model.layers[i].base_cross_attn.v_proj.bias = nn.Parameter(
                             original_v_bias
                         )
-                        self.model.layers[i].self_attn.o_proj.bias = nn.Parameter(
+                        self.model.layers[i].base_cross_attn.o_proj.bias = nn.Parameter(
                             original_o_bias
                         )
 
-                    self.model.layers[i].mlp.gate_proj.weight = nn.Parameter(
-                        original_mlp_gate_proj_weights
+                    self.model.layers[i].self_attn.q_proj.bias = nn.Parameter(
+                        original_q_bias
                     )
-                    self.model.layers[i].mlp.up_proj.weight = nn.Parameter(
-                        original_mlp_up_proj_weights
+                    self.model.layers[i].self_attn.k_proj.bias = nn.Parameter(
+                        original_k_bias
                     )
-                    self.model.layers[i].mlp.down_proj.weight = nn.Parameter(
-                        original_mlp_down_proj_weights
+                    self.model.layers[i].self_attn.v_proj.bias = nn.Parameter(
+                        original_v_bias
+                    )
+                    self.model.layers[i].self_attn.o_proj.bias = nn.Parameter(
+                        original_o_bias
                     )
 
-                    self.model.layers[i].input_layernorm.weight = nn.Parameter(
-                        original_input_layernorm_weights
-                    )
-                    self.model.layers[i].post_attention_layernorm.weight = nn.Parameter(
-                        original_post_attention_layernorm
-                    )
+                self.model.layers[i].mlp.gate_proj.weight = nn.Parameter(
+                    original_mlp_gate_proj_weights
+                )
+                self.model.layers[i].mlp.up_proj.weight = nn.Parameter(
+                    original_mlp_up_proj_weights
+                )
+                self.model.layers[i].mlp.down_proj.weight = nn.Parameter(
+                    original_mlp_down_proj_weights
+                )
+
+                self.model.layers[i].input_layernorm.weight = nn.Parameter(
+                    original_input_layernorm_weights
+                )
+                self.model.layers[i].post_attention_layernorm.weight = nn.Parameter(
+                    original_post_attention_layernorm
+                )
 
     def forward(
         self,
@@ -544,6 +514,7 @@ class LlamaInterpretor(nn.Module):
         subspace_module=None,
         das_dimension=None,
         device="cuda",
+        compute_metrics=False,
     ):
         super().__init__()
 
@@ -557,7 +528,7 @@ class LlamaInterpretor(nn.Module):
 
         self.bidding_threshold = 0.1
 
-        self.use_das_intervention = subspace_module != None
+        self.use_das_intervention = subspace_module is not None
         self.das_selective_subspace = subspace_module in [
             "ReflectSelect",
             "MaskSelect",
@@ -569,24 +540,28 @@ class LlamaInterpretor(nn.Module):
                 self.das_module = BoundlessRotatedSpaceIntervention(
                     embed_dim=self.target_model.config.hidden_size,
                     torch_dtype=config.torch_dtype,
+                    compute_metrics=compute_metrics,
                 )
             elif subspace_module == "DAS":
                 self.das_module = LowRankRotatedSpaceIntervention(
                     embed_dim=self.target_model.config.hidden_size,
                     low_rank_dimension=das_dimension,
                     torch_dtype=config.torch_dtype,
+                    compute_metrics=compute_metrics,
                 )
             elif subspace_module == "MaskSelect":
                 self.das_module = SelectiveLowRankRotatedSpaceIntervention(
                     embed_dim=self.target_model.config.hidden_size,
                     low_rank_dimension=das_dimension,
                     torch_dtype=config.torch_dtype,
+                    compute_metrics=compute_metrics,
                 )
             elif subspace_module == "ReflectSelect":
                 self.das_module = ReflectiveLowRankRotatedSpaceIntervention(
                     embed_dim=self.target_model.config.hidden_size,
                     low_rank_dimension=das_dimension,
                     torch_dtype=config.torch_dtype,
+                    compute_metrics=compute_metrics,
                 )
             elif subspace_module == "QuasiProjective":
                 self.das_module = QuasiProjectiveIntervention(
@@ -596,6 +571,7 @@ class LlamaInterpretor(nn.Module):
                     lambda_parameter=10,
                     return_penalty=True,
                     torch_dtype=config.torch_dtype,
+                    compute_metrics=compute_metrics,
                 )
             else:
                 raise ValueError("Invalid subspace module")
@@ -689,6 +665,7 @@ class LlamaInterpretor(nn.Module):
         output_intervention_weight: bool = True,
         intervention_weight: torch.Tensor = None,
         inference_mode: str = None,
+        compute_metrics: bool = False,
     ) -> InterpretorModelOutput:
         assert inference_mode in [
             None,
@@ -697,6 +674,8 @@ class LlamaInterpretor(nn.Module):
             "groundtruth",
             "bidding_argmax",
         ]
+
+        metrics = {}
 
         if intervention_layer is None:
             intervention_layer = self.config.intervention_layer
@@ -882,9 +861,12 @@ class LlamaInterpretor(nn.Module):
         )  # TODO: Fix it to help the new implement
         intervention_matrix = intervention_matrix.sum(dim=1)
 
+        das_metrics = {}
+
         # Run target model with edit vectors.
         # This adds the edit vectors to the given hidden state at the specified batch index, position, and layer
         def representation_swap(module, input, output):
+            nonlocal das_metrics
             base_hidden_states = output[0].clone()
             batch_size = base_hidden_states.shape[0]
             base_intervention_weight = intervention_weight[:, -1, :]
@@ -904,17 +886,32 @@ class LlamaInterpretor(nn.Module):
                 )
 
                 if self.das_selective_subspace:
-                    mixed_output = self.das_module(
+                    mixed_output, module_das_metrics = self.das_module(
                         base_hidden_states,
                         source_intervention_hidden_states,
                         hypernet_hidden_states,
                     )
                 else:
-                    mixed_output = self.das_module(
+                    mixed_output, module_das_metrics = self.das_module(
                         base_hidden_states,
                         source_intervention_hidden_states,
                         batch_size,
                     )
+
+                # Find the module name in the state dict
+                for k, v in module_das_metrics.items():
+                    module_name = next(
+                        (
+                            name
+                            for name, mod in self.target_model.named_modules()
+                            if mod is module
+                        ),
+                        None,
+                    )
+                    if module_name:
+                        das_metrics[f"{module_name}/{k}"] = v
+                    else:
+                        das_metrics[f"unknown_module/{k}"] = v
 
                 output[0][:] += mixed_output - base_hidden_states
             else:
@@ -961,7 +958,12 @@ class LlamaInterpretor(nn.Module):
 
         logits = target_result.logits
 
+        # collate metrics from das module, etc. to output
         output = InterpretorModelOutput(logits=logits)
+
+        metrics.update(das_metrics)
+        output.metrics = metrics
+
         if output_edited_hidden_states:
             output.edited_hidden_states = target_result.hidden_states
 

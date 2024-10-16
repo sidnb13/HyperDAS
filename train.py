@@ -3,13 +3,13 @@ import os
 from sqlite3 import InterfaceError
 
 import hydra
-import wandb
 from datasets import load_from_disk
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 
 import inference
+import wandb
 from src.hyperdas.data_utils import (
     get_ravel_collate_fn,
 )
@@ -50,6 +50,7 @@ def run_experiment(
     save_model=False,
     break_asymmetric=False,
     target_intervention_num=None,
+    compute_metrics=False,
     **kwargs,
 ):
     """if save_dir is not None:
@@ -118,6 +119,7 @@ def run_experiment(
         ablate_source_token_attention=ablate_source_token_attention,
         break_asymmetric=break_asymmetric,
         device="cuda",
+        compute_metrics=compute_metrics,
     )
 
     if load_trained_from is not None:
