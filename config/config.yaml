@@ -15,8 +15,8 @@ n_steps: -1
 model_name_or_path: "/nlp/scr/sjd24/llama3-8b"
 batch_size: 16
 save_dir: null
-test_path: "./experiments/RAVEL/data/nobel_prize_winner_field_test"
-train_path: "./experiments/RAVEL/data/nobel_prize_winner_field_train"
+test_path: "./experiments/RAVEL/data/city_test"
+train_path: "./experiments/RAVEL/data/city_train"
 causal_loss_weight: 1.0
 das_dimension: 128
 lr: 1e-4
@@ -45,7 +45,7 @@ max_grad_norm: 4.0
 
 # ridge projective parameters
 top_k_parameter: 128
-lambda_parameter: 10
+lambda_parameter: 1
 importance_power: -2
 
 # Specific parameters for train_ablation.py

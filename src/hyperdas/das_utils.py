@@ -367,6 +367,18 @@ class LowRankRotatedSpaceIntervention(
             (rotated_source - rotated_base), self.rotate_layer.weight.T
         )
 
+        if self.compute_metrics and self.training:
+            with torch.no_grad():
+                metrics["intervention_norm"] = (output - base).norm().item()
+                # Intervention Directional Change
+                metrics["angular_change"] = (
+                    torch.acos(
+                        F.cosine_similarity(base, output).clamp(-1 + 1e-6, 1 - 1e-6)
+                    )
+                    .mean()
+                    .item()
+                )
+
         return output.to(base.dtype), metrics
 
     def __str__(self):
@@ -620,7 +632,13 @@ class QuasiProjectiveIntervention(
 
         # Add condition number to metrics
         if self.compute_metrics and self.training:
-            pass
+            # Compute mean, min, max of the denominator score vector
+            metrics["denominator_scores_mean"] = denominator_scores.mean().item()
+            metrics["denominator_scores_min"] = denominator_scores.min().item()
+            metrics["denominator_scores_max"] = denominator_scores.max().item()
+            metrics["importance_scores_norms"] = (
+                importance_scores.norm(dim=-1).mean().item()
+            )
 
         # Cast ridge_coeffs back to the original dtype
         ridge_coeffs = ridge_coeffs.to(X.dtype)
@@ -671,6 +689,9 @@ class QuasiProjectiveIntervention(
         output = base + (source_interchange - base_interchange)
 
         if self.compute_metrics and self.training:
+            metrics.update({f"source/{k}": v for k, v in source_metrics.items()})
+            metrics.update({f"base/{k}": v for k, v in base_metrics.items()})
+
             with torch.no_grad():
                 # Reshape top_k_values to [batch, d_embed, k]
                 reshaped_values = selected_dictionary.view(
@@ -682,6 +703,7 @@ class QuasiProjectiveIntervention(
                 metrics["intervention_norm"] = (
                     (source_interchange - base_interchange).norm().item()
                 )
+                metrics["dictionary_norm"] = top_k_values.norm().item()
                 metrics["selected_dictionary_nn_l0"] = (
                     (selected_dictionary > 0).float().sum(1).mean().item()
                 )
@@ -707,6 +729,7 @@ class QuasiProjectiveIntervention(
                 self.lambda_parameter
                 / (self.lambda_parameter + top_k_values**self.importance_power)
             )
+            metrics["lambda_penalty"] = penalty.item()
             if self.penalty is not None:
                 raise ValueError("Penalty is already set.")
 
