@@ -564,7 +564,7 @@ class QuasiProjectiveIntervention(
             nn.Linear(in_features=embed_dim, out_features=dict_size, bias=True).to(
                 dtype=torch_dtype
             ),
-            nn.ReLU(),
+            nn.ReLU(),  # NOTE: can we use softplus instead of eps down below?
         )
 
         # Create a dict_size * embed_dim embedding matrix
@@ -692,8 +692,8 @@ class QuasiProjectiveIntervention(
         output = base + (source_interchange - base_interchange)
 
         if self.compute_metrics and self.training:
-            metrics.update({f"source/{k}": v for k, v in source_metrics.items()})
-            metrics.update({f"base/{k}": v for k, v in base_metrics.items()})
+            metrics.update({f"source_{k}": v for k, v in source_metrics.items()})
+            metrics.update({f"base_{k}": v for k, v in base_metrics.items()})
 
             with torch.no_grad():
                 # Reshape top_k_values to [batch, d_embed, k]
@@ -714,8 +714,16 @@ class QuasiProjectiveIntervention(
                 # Projection Quality: project onto col space of selected_dictionary
                 base_proj = torch.matmul(base, selected_dictionary.transpose(-2, -1))
                 base_proj = torch.matmul(base_proj, selected_dictionary)
-                metrics["projection_quality"] = (
+                metrics["base_projection_quality"] = (
                     F.cosine_similarity(base, base_proj).mean().item()
+                )
+
+                source_proj = torch.matmul(
+                    source, selected_dictionary.transpose(-2, -1)
+                )
+                source_proj = torch.matmul(source_proj, selected_dictionary)
+                metrics["source_projection_quality"] = (
+                    F.cosine_similarity(source, source_proj).mean().item()
                 )
 
                 # Intervention Directional Change

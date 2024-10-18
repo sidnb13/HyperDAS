@@ -1,5 +1,6 @@
 defaults:
   - _self_
+  - override hydra/launcher: joblib
   - override hydra/hydra_logging: disabled
   - override hydra/job_logging: disabled
 
@@ -8,6 +9,9 @@ compute_metrics: false # whether to compute metrics for das modules and log
 log_wandb: false
 wandb_project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
 wandb_run_name: ${oc.env:WANDB_RUN_NAME,"${subspace_module}_${now:%Y%m%d_%H%M%S}"}
+wandb_group: ${oc.env:WANDB_GROUP,null}
+wandb_tags: ${oc.env:WANDB_TAGS,null}
+wandb_notes: ${oc.env:WANDB_NOTES,null}
 intervention_layer: 15
 load_trained_from: null
 n_epochs: 5
@@ -33,7 +37,8 @@ sparsity_loss_weight_end: 1.0
 target_intervention_num: null
 iso_loss_weight: 1.0
 save_model: false
-inference_modes: ["default", "bidding_argmax", "groundtruth", "column_argmax", "global_argmax"]
+inference_modes:
+  ["default", "bidding_argmax", "groundtruth", "column_argmax", "global_argmax"]
 num_decoders: 8
 initialize_from_scratch: false
 ablate_base_token_attention: false
@@ -55,10 +60,23 @@ epsilon: 1e-6
 # Specific parameters for train_baseline.py
 intervention_location: "last_entity_token"
 
-# Hydra-specific configuration
 hydra:
   run:
     dir: ./outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
   sweep:
     dir: ./multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
     subdir: ${hydra.job.num}
+
+  launcher:
+    _target_: hydra_plugins.hydra_joblib_launcher.joblib_launcher.JoblibLauncher
+    n_jobs: -1  # Use all available cores
+    backend: null
+    prefer: processes
+    require: null
+    verbose: 0
+    timeout: null
+    pre_dispatch: 2*n_jobs
+    batch_size: auto
+    temp_folder: null
+    max_nbytes: null
+    mmap_mode: r

@@ -2,19 +2,25 @@ import argparse
 import os
 
 import hydra
+import torch
 from datasets import load_from_disk
+from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 
 import wandb
+from logger import get_logger
 from src.hyperdas.data_utils import (
     get_ravel_collate_fn,
 )
 
+logger = get_logger(__name__)
+
 
 def run_experiment(
     config: DictConfig,
+    device: str | torch.DeviceObjType = "cuda",
 ):
     """if save_dir is not None:
     save_dir = os.path.join("./models", save_dir)"""
@@ -23,6 +29,9 @@ def run_experiment(
             project=config.wandb_project,
             name=config.wandb_run_name,
             config=OmegaConf.to_container(config),
+            group=config.wandb_group,
+            tags=config.wandb_tags,
+            notes=config.wandb_notes,
         )
 
     if "default" in config.inference_modes:
@@ -75,7 +84,7 @@ def run_experiment(
         lambda_parameter=config.lambda_parameter,
         epsilon=config.epsilon,
         importance_power=config.importance_power,
-        device="cuda",
+        device=device,
         compute_metrics=config.compute_metrics,
     )
 
@@ -111,7 +120,20 @@ def run_experiment(
 
 @hydra.main(version_base=None, config_path="config", config_name="config")
 def hydra_main(cfg: DictConfig):
-    run_experiment(cfg)
+    # Get the total number of GPUs
+    num_gpus = torch.cuda.device_count()
+    # Get the current job number from Hydra's multi-run counter
+    job_num = HydraConfig.get().job.num
+    # Get a unique job identifier (output directory)
+    job_id = HydraConfig.get().run.dir
+    # Assign a GPU based on the job number
+    gpu_id = job_num % num_gpus
+    device = f"cuda:{gpu_id}"
+    torch.cuda.set_device(device)
+
+    # Pass the device to your run_experiment function
+    logger.debug("Launching job %s on GPU %s", job_id, device)
+    run_experiment(cfg, device)
 
 
 def argparse_main():
