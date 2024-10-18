@@ -73,6 +73,7 @@ def run_experiment(
         break_asymmetric=config.break_asymmetric,
         top_k_parameter=config.top_k_parameter,
         lambda_parameter=config.lambda_parameter,
+        epsilon=config.epsilon,
         importance_power=config.importance_power,
         device="cuda",
         compute_metrics=config.compute_metrics,

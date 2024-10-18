@@ -38,6 +38,7 @@ class RavelInterpretorHypernetwork(nn.Module):
         top_k_parameter=128,
         lambda_parameter=10,
         importance_power=-2,
+        epsilon=1e-6,
         device="cuda",
         compute_metrics=False,
     ):
@@ -65,6 +66,7 @@ class RavelInterpretorHypernetwork(nn.Module):
         self.interpretor_config.top_k_parameter = top_k_parameter
         self.interpretor_config.lambda_parameter = lambda_parameter
         self.interpretor_config.importance_power = importance_power
+        self.interpretor_config.epsilon = epsilon
 
         self.interpretor = LlamaInterpretor(
             self.interpretor_config,

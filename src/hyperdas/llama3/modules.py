@@ -55,6 +55,7 @@ class LlamaInterpretorConfig(LlamaConfig):
     top_k_parameter: int = 128
     lambda_parameter: int = 10
     importance_power: int = -2
+    epsilon: float = 1e-6
 
 
 class LlamaModelWithCrossAttention(LlamaModel):
@@ -574,6 +575,7 @@ class LlamaInterpretor(nn.Module):
                     top_k_parameter=config.top_k_parameter,
                     lambda_parameter=config.lambda_parameter,
                     importance_power=config.importance_power,
+                    epsilon=config.epsilon,
                     return_penalty=True,
                     torch_dtype=config.torch_dtype,
                     compute_metrics=compute_metrics,

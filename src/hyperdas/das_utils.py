@@ -544,6 +544,7 @@ class QuasiProjectiveIntervention(
         dict_size,
         top_k_parameter,
         lambda_parameter,
+        epsilon=1e-6,
         importance_power=-2,
         torch_dtype=torch.bfloat16,
         return_penalty=True,
@@ -557,6 +558,7 @@ class QuasiProjectiveIntervention(
         # and you might want more fall-off
         self.lambda_parameter = lambda_parameter
         self.importance_power = importance_power
+        self.epsilon = epsilon
 
         self.edit_instruction_encodings = nn.Sequential(
             nn.Linear(in_features=embed_dim, out_features=dict_size, bias=True).to(
@@ -607,10 +609,11 @@ class QuasiProjectiveIntervention(
 
         metrics = {}
 
+        # We add an epsilon for instability prevention
         # denominator scores will be a component inside the matrix inversion
         # Note that alpha < 0 implies that denominator_scores_i is low for the most important features
-        denominator_scores = (
-            importance_scores**importance_power
+        denominator_scores = torch.pow(
+            importance_scores + self.epsilon, importance_power
         )  # batch, num_active_features
         # denominator_scores:
 
