@@ -1,6 +1,7 @@
 import json
 import os
 from math import ceil
+from typing import Dict, Optional
 
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -14,7 +15,6 @@ import wandb
 from logger import get_logger
 
 from ..das_utils import QuasiProjectiveIntervention
-from ..utils import InterpretorModelOutput
 from .modules import LlamaInterpretor, LlamaInterpretorConfig
 
 logger = get_logger(__name__)
@@ -24,23 +24,24 @@ class RavelInterpretorHypernetwork(nn.Module):
     # Separating the editor config file, from its base model's configurations
     def __init__(
         self,
-        model_name_or_path="/home/ubuntu/llama3-8b",
-        num_editing_heads=32,
-        chop_editor_at_layer=8,
-        intervention_layer=0,
-        subspace_module="ReflectSelect",
-        torch_dtype=torch.bfloat16,
-        das_dimension=None,
-        initialize_from_scratch=False,
-        ablate_base_token_attention=False,
-        ablate_source_token_attention=False,
-        break_asymmetric=False,
-        top_k_parameter=128,
-        lambda_parameter=10,
-        importance_power=-2,
-        epsilon=1e-6,
-        device="cuda",
-        compute_metrics=False,
+        model_name_or_path: str = "/home/ubuntu/llama3-8b",
+        num_editing_heads: int = 32,
+        chop_editor_at_layer: int = 8,
+        intervention_layer: int = 0,
+        subspace_module: str = "ReflectSelect",
+        torch_dtype: torch.dtype = torch.bfloat16,
+        das_dimension: Optional[int] = None,
+        initialize_from_scratch: bool = False,
+        ablate_base_token_attention: bool = False,
+        ablate_source_token_attention: bool = False,
+        break_asymmetric: bool = False,
+        top_k_parameter: int = 128,
+        lambda_parameter: float = 10.0,
+        importance_power: float = -2.0,
+        epsilon: float = 1e-6,
+        device: str = "cuda",
+        compute_metrics: bool = False,
+        max_eval_steps: int = -1,
     ):
         super().__init__()
 
@@ -81,11 +82,12 @@ class RavelInterpretorHypernetwork(nn.Module):
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
 
-        self.use_das_intervention = subspace_module != None
+        self.use_das_intervention = subspace_module is not None
         self.das_dim = das_dimension
         self.residual_cache = None
         self.opt = None
         # self.training_loss = None
+        self.max_eval_steps = max_eval_steps
 
         # DAS Training Hyperparameters
         self.rotate_lr = 1e-3
@@ -121,25 +123,26 @@ class RavelInterpretorHypernetwork(nn.Module):
 
     def forward(
         self,
-        editor_input_ids: torch.Tensor = None,
-        base_input_ids: torch.Tensor = None,
-        base_attention_mask: torch.Tensor = None,
-        base_intervention_mask: torch.Tensor = None,
-        source_input_ids: torch.Tensor = None,
-        source_attention_mask: torch.Tensor = None,
-        source_intervention_mask: torch.Tensor = None,
-        labels: torch.Tensor = None,
+        editor_input_ids: torch.Tensor,
+        base_input_ids: torch.Tensor,
+        base_attention_mask: torch.Tensor,
+        base_intervention_mask: torch.Tensor,
+        source_input_ids: torch.Tensor,
+        source_attention_mask: torch.Tensor,
+        source_intervention_mask: torch.Tensor,
+        labels: Optional[torch.Tensor] = None,
         output_intervention_weight: bool = True,
-        is_causal: torch.Tensor = None,
+        is_causal: Optional[torch.Tensor] = None,
         causal_loss_weight: float = 1.0,
         iso_loss_weight: float = 1.0,
-        intervention_weight: torch.Tensor = None,
-        inference_mode=None,
-    ):
-        _pred: InterpretorModelOutput = self.interpretor(
+        intervention_weight: Optional[torch.Tensor] = None,
+        inference_mode: Optional[str] = None,
+    ) -> Dict[str, torch.Tensor]:
+        _pred = self.interpretor(
             editor_input_ids=editor_input_ids,
-            editor_attention_mask=editor_input_ids
-            != self.interpretor_config.eos_token_id,
+            editor_attention_mask=(
+                editor_input_ids != self.interpretor_config.eos_token_id
+            ),
             base_input_ids=base_input_ids,
             base_attention_mask=base_attention_mask,
             base_intervention_mask=base_intervention_mask,
@@ -179,7 +182,6 @@ class RavelInterpretorHypernetwork(nn.Module):
             labels = labels[label_indices]
 
             # Compute the cross-entropy loss with masking
-
             if is_causal is None:
                 criterion = torch.nn.CrossEntropyLoss(reduction="mean")
                 loss = criterion(log_prob_predictions, labels.long())
@@ -314,7 +316,9 @@ class RavelInterpretorHypernetwork(nn.Module):
             if i == batch_id:
                 break
 
-        plot_multiple_modes = type(inference_mode) == list and len(inference_mode) > 1
+        plot_multiple_modes = (
+            isinstance(inference_mode, list) and len(inference_mode) > 1
+        )
         editor_input_ids = batch["editor_input_ids"][example_id]
         base_input_ids = batch["base_input_ids"][example_id]
         source_input_ids = batch["source_input_ids"][example_id]
@@ -417,7 +421,9 @@ class RavelInterpretorHypernetwork(nn.Module):
 
         if not plot_multiple_modes:
             inference_mode = (
-                inference_mode if type(inference_mode) != list else inference_mode[0]
+                inference_mode[0]
+                if isinstance(inference_mode, list)
+                else inference_mode
             )
             results = self.inspect_batch_prediction_ouptuts(
                 batch, inference_mode=inference_mode, eval_n_label_tokens=3
@@ -482,6 +488,7 @@ class RavelInterpretorHypernetwork(nn.Module):
 
         return fig, axes
 
+    @torch.no_grad()
     def eval_accuracy(self, test_loader, inference_mode=None, eval_n_label_tokens=None):
         assert inference_mode in [
             None,
@@ -496,75 +503,76 @@ class RavelInterpretorHypernetwork(nn.Module):
         correct_idxs = []
         is_causal = []
 
-        with torch.no_grad():
-            for batch_id, batch in tqdm(
-                enumerate(test_loader),
-                desc="Evaluating accuracy",
-                total=len(test_loader),
-            ):
-                if inference_mode == "groundtruth":
-                    intervention_weight = torch.zeros(
-                        len(batch["editor_input_ids"]),
-                        batch["source_input_ids"].shape[1] + 1,
-                        batch["base_input_ids"].shape[1],
-                    ).to("cuda")
-                    intervention_weight[:, -1, :] = 1.0
+        for batch_id, batch in tqdm(
+            enumerate(test_loader),
+            desc="Evaluating accuracy",
+            total=self.max_eval_steps if self.max_eval_steps > 0 else len(test_loader),
+        ):
+            # Move entire batch to GPU once
+            batch = {k: v.to("cuda") for k, v in batch.items()}
 
-                    for i in range(len(batch["base_entity_position_ids"])):
-                        intervention_weight[
-                            i, -1, batch["base_entity_position_ids"][i]
-                        ] = 0.0
-                        intervention_weight[
-                            i,
-                            batch["source_entity_position_ids"][i],
-                            batch["base_entity_position_ids"][i],
-                        ] = 1.0
-                else:
-                    intervention_weight = None
-
-                predictions = self.forward(
-                    editor_input_ids=batch["editor_input_ids"].to("cuda"),
-                    base_input_ids=batch["base_input_ids"].to("cuda"),
-                    base_attention_mask=batch["base_attention_mask"].to("cuda"),
-                    base_intervention_mask=batch["base_intervention_mask"].to("cuda"),
-                    source_input_ids=batch["source_input_ids"].to("cuda"),
-                    source_attention_mask=batch["source_attention_mask"].to("cuda"),
-                    source_intervention_mask=batch["source_intervention_mask"].to(
-                        "cuda"
-                    ),
-                    labels=batch["labels"].to("cuda"),
-                    inference_mode=inference_mode,
-                    intervention_weight=intervention_weight,
+            if inference_mode == "groundtruth":
+                intervention_weight = torch.zeros(
+                    len(batch["editor_input_ids"]),
+                    batch["source_input_ids"].shape[1] + 1,
+                    batch["base_input_ids"].shape[1],
+                    device=batch["editor_input_ids"].device,
                 )
-                test_loss.append(predictions["loss"].item())
-                if isinstance(self.interpretor.das_module, QuasiProjectiveIntervention):
-                    self.interpretor.zero_penalty()
+                intervention_weight[:, -1, :] = 1.0
 
-                batch_pred_ids = torch.argmax(predictions["logits"], dim=-1)
-                is_causal.extend(batch["is_causal"].cpu().numpy().tolist())
+                for i in range(len(batch["base_entity_position_ids"])):
+                    intervention_weight[i, -1, batch["base_entity_position_ids"][i]] = (
+                        0.0
+                    )
+                    intervention_weight[
+                        i,
+                        batch["source_entity_position_ids"][i],
+                        batch["base_entity_position_ids"][i],
+                    ] = 1.0
+            else:
+                intervention_weight = None
 
-                for i, (label, pred_ids) in enumerate(
-                    zip(batch["labels"].to("cuda"), batch_pred_ids)
-                ):
-                    label_idx = label != -100
-                    output_idx = torch.zeros_like(label_idx)
-                    output_idx[:-1] = label_idx[1:]
+            predictions = self.forward(
+                editor_input_ids=batch["editor_input_ids"],
+                base_input_ids=batch["base_input_ids"],
+                base_attention_mask=batch["base_attention_mask"],
+                base_intervention_mask=batch["base_intervention_mask"],
+                source_input_ids=batch["source_input_ids"],
+                source_attention_mask=batch["source_attention_mask"],
+                source_intervention_mask=batch["source_intervention_mask"],
+                labels=batch["labels"],
+                inference_mode=inference_mode,
+                intervention_weight=intervention_weight,
+            )
+            test_loss.append(predictions["loss"].item())
+            if isinstance(self.interpretor.das_module, QuasiProjectiveIntervention):
+                self.interpretor.zero_penalty()
 
-                    label = label[label_idx]
-                    pred_ids = pred_ids[output_idx]
+            batch_pred_ids = torch.argmax(predictions["logits"], dim=-1)
 
-                    if (
-                        eval_n_label_tokens is not None
-                        and len(label) > eval_n_label_tokens
-                    ):
-                        label = label[:eval_n_label_tokens]
-                        pred_ids = pred_ids[:eval_n_label_tokens]
+            is_causal.extend(batch["is_causal"].cpu().numpy().tolist())
 
-                    is_correct = (
-                        torch.sum(label == pred_ids) == torch.numel(label)
-                    ).item()
-                    if is_correct:
-                        correct_idxs.append(batch_id * len(batch["labels"]) + i)
+            for i, (label, pred_ids) in enumerate(
+                zip(batch["labels"].to("cuda"), batch_pred_ids)
+            ):
+                label_idx = label != -100
+                output_idx = torch.zeros_like(label_idx)
+                output_idx[:-1] = label_idx[1:]
+
+                label = label[label_idx]
+                pred_ids = pred_ids[output_idx]
+
+                if eval_n_label_tokens is not None and len(label) > eval_n_label_tokens:
+                    label = label[:eval_n_label_tokens]
+                    pred_ids = pred_ids[:eval_n_label_tokens]
+
+                is_correct = (torch.sum(label == pred_ids) == torch.numel(label)).item()
+                if is_correct:
+                    correct_idxs.append(batch_id * len(batch["labels"]) + i)
+
+            if self.max_eval_steps > 0 and batch_id + 1 > self.max_eval_steps:
+                break
+
         total_causal = sum(is_causal)
         total_isolate = len(is_causal) - total_causal
 
@@ -803,20 +811,19 @@ class RavelInterpretorHypernetwork(nn.Module):
                     current_batch_size = len(batch["editor_input_ids"])
                     num_datapoints_in_epoch += current_batch_size
 
+                    # Move all batch items to device
+                    batch = {k: v.to("cuda") for k, v in batch.items()}
+
                     prediction = self.forward(
-                        editor_input_ids=batch["editor_input_ids"].to("cuda"),
-                        base_input_ids=batch["base_input_ids"].to("cuda"),
-                        base_attention_mask=batch["base_attention_mask"].to("cuda"),
-                        base_intervention_mask=batch["base_intervention_mask"].to(
-                            "cuda"
-                        ),
-                        source_input_ids=batch["source_input_ids"].to("cuda"),
-                        source_attention_mask=batch["source_attention_mask"].to("cuda"),
-                        source_intervention_mask=batch["source_intervention_mask"].to(
-                            "cuda"
-                        ),
-                        labels=batch["labels"].to("cuda"),
-                        is_causal=batch["is_causal"].to("cuda"),
+                        editor_input_ids=batch["editor_input_ids"],
+                        base_input_ids=batch["base_input_ids"],
+                        base_attention_mask=batch["base_attention_mask"],
+                        base_intervention_mask=batch["base_intervention_mask"],
+                        source_input_ids=batch["source_input_ids"],
+                        source_attention_mask=batch["source_attention_mask"],
+                        source_intervention_mask=batch["source_intervention_mask"],
+                        labels=batch["labels"],
+                        is_causal=batch["is_causal"],
                         causal_loss_weight=causal_loss_weight,
                         iso_loss_weight=iso_loss_weight,
                         output_intervention_weight=True,
@@ -896,7 +903,7 @@ class RavelInterpretorHypernetwork(nn.Module):
                                 step_sparsity_loss_weight.item()
                             )
 
-                        print(output_metrics)
+                        logger.info(output_metrics)
 
                     # Update progress bar
                     pbar.update(1)  # note: this was incorrectly displaying before!

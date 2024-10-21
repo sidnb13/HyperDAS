@@ -4,7 +4,7 @@ import random
 
 import numpy as np
 import torch
-from datasets import Dataset, load_from_disk
+from datasets import Dataset
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -215,8 +215,9 @@ def get_ravel_collate_fn(
                 entities.append(b["entity"])
                 counterfactual_entities.append(b["counterfactual_entity"])
 
+        # NOTE: truncate=true was here before (sidnb13 removed)
         editor_input_ids = tokenizer(
-            edit_instructions, return_tensors="pt", padding=True, truncation=True
+            edit_instructions, return_tensors="pt", padding=True
         )["input_ids"]
         is_causal = torch.tensor([b["attribute_type"] == "causal" for b in batch])
         returned_dict = {

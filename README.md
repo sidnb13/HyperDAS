@@ -57,3 +57,33 @@
    ```
 
 4. For more detailed configuration options, refer to the `config/config.yaml` file.
+
+## Docker Usage
+
+To use HyperDAS with Docker:
+
+1. Ensure you have Docker and Docker Compose installed on your system.
+
+2. Build the Docker image:
+   ```
+   docker-compose build
+   ```
+
+3. Start the Docker container:
+   ```
+   docker-compose up -d
+   ```
+
+4. To access the container's shell:
+   ```
+   docker exec -it hyperdas /bin/bash
+   ```
+
+5. Once inside the container, you can run the training scripts as described in the Usage section above.
+
+6. To stop the container:
+   ```
+   docker-compose down
+   ```
+
+Note: The Docker setup includes GPU support and mounts the necessary volumes for seamless development and data persistence.

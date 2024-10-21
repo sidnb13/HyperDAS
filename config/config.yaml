@@ -1,8 +1,6 @@
 defaults:
   - _self_
   - override hydra/launcher: joblib
-  - override hydra/hydra_logging: disabled
-  - override hydra/job_logging: disabled
 
 # Common parameters
 compute_metrics: false # whether to compute metrics for das modules and log
@@ -17,7 +15,8 @@ load_trained_from: null
 n_epochs: 5
 n_steps: -1
 model_name_or_path: "/nlp/scr/sjd24/llama3-8b"
-batch_size: 16
+train_batch_size: 16
+test_batch_size: 64
 save_dir: null
 test_path: "./experiments/RAVEL/data/city_test"
 train_path: "./experiments/RAVEL/data/city_train"
@@ -26,6 +25,8 @@ das_dimension: 128
 lr: 1e-4
 eval_per_steps: 100
 checkpoint_per_steps: null
+max_eval_steps: -1
+num_workers: 4
 
 # Specific parameters for train.py
 source_suffix_visibility: false

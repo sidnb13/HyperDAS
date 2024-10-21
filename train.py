@@ -4,7 +4,9 @@ import os
 import hydra
 import torch
 from datasets import load_from_disk
+from dotenv import load_dotenv
 from hydra.core.hydra_config import HydraConfig
+from hydra.utils import get_original_cwd, to_absolute_path
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
@@ -14,6 +16,8 @@ from logger import get_logger
 from src.hyperdas.data_utils import (
     get_ravel_collate_fn,
 )
+
+load_dotenv()
 
 logger = get_logger(__name__)
 
@@ -59,12 +63,25 @@ def run_experiment(
         contain_entity_position="groundtruth" in config.inference_modes,
     )
 
+    is_multirun = HydraConfig.get().job.num is not None
+    num_workers = 0 if is_multirun else config.num_workers
+
     data_loader = DataLoader(
-        train_set, batch_size=config.batch_size, collate_fn=collate_fn, shuffle=True
+        train_set,
+        batch_size=config.train_batch_size,
+        collate_fn=collate_fn,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=True,
     )
 
     test_data_loader = DataLoader(
-        test_set, batch_size=config.batch_size, collate_fn=collate_fn, shuffle=True
+        test_set,
+        batch_size=config.test_batch_size,
+        collate_fn=collate_fn,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=True,
     )
 
     from src.hyperdas.llama3.model import RavelInterpretorHypernetwork
@@ -86,6 +103,7 @@ def run_experiment(
         importance_power=config.importance_power,
         device=device,
         compute_metrics=config.compute_metrics,
+        max_eval_steps=config.max_eval_steps,
     )
 
     if config.load_trained_from is not None:
@@ -120,24 +138,38 @@ def run_experiment(
 
 @hydra.main(version_base=None, config_path="config", config_name="config")
 def hydra_main(cfg: DictConfig):
-    # Get the total number of GPUs
-    num_gpus = torch.cuda.device_count()
-    # Get the current job number from Hydra's multi-run counter
     try:
-        job_num = HydraConfig.get().job.num
-    except Exception:
-        # If there's no multirun in progress, default to 0
-        job_num = 0
-    # Get a unique job identifier (output directory)
-    job_id = HydraConfig.get().run.dir
-    # Assign a GPU based on the job number
-    gpu_id = job_num % num_gpus
-    device = f"cuda:{gpu_id}"
-    torch.cuda.set_device(device)
+        logger.info(f"Working directory : {os.getcwd()}")
+        logger.info(f"Original working directory    : {get_original_cwd()}")
+        logger.info(f"to_absolute_path('foo')       : {to_absolute_path('foo')}")
+        logger.info(f"to_absolute_path('/foo')      : {to_absolute_path('/foo')}")
+        logger.info(f"Config: {OmegaConf.to_yaml(cfg)}")
 
-    # Pass the device to your run_experiment function
-    logger.debug("Launching job %s on GPU %s", job_id, device)
-    run_experiment(cfg, device)
+        # Get the total number of GPUs
+        num_gpus = torch.cuda.device_count()
+        logger.info(f"Number of GPUs: {num_gpus}")
+
+        # Get the current job number from Hydra's multi-run counter
+        job_num = HydraConfig.get().job.num
+        logger.info(f"Job number: {job_num}")
+
+        # Get a unique job identifier (output directory)
+        job_id = HydraConfig.get().run.dir
+        logger.info(f"Job ID: {job_id}")
+
+        # Assign a GPU based on the job number
+        gpu_id = job_num % num_gpus
+        device = f"cuda:{gpu_id}"
+        logger.info(f"Assigned device: {device}")
+
+        torch.cuda.set_device(device)
+
+        # Pass the device to your run_experiment function
+        logger.info(f"Launching job {job_id} on GPU {device}")
+        run_experiment(cfg, device)
+    except Exception as e:
+        logger.error(f"An error occurred in hydra_main: {str(e)}", exc_info=True)
+        raise
 
 
 def argparse_main():

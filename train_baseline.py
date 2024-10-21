@@ -53,11 +53,14 @@ def run_experiment(
     )
 
     data_loader = DataLoader(
-        train_set, batch_size=config.batch_size, collate_fn=collate_fn, shuffle=True
+        train_set,
+        batch_size=config.train_batch_size,
+        collate_fn=collate_fn,
+        shuffle=True,
     )
 
     test_data_loader = DataLoader(
-        test_set, batch_size=config.batch_size, collate_fn=collate_fn, shuffle=True
+        test_set, batch_size=config.test_batch_size, collate_fn=collate_fn, shuffle=True
     )
 
     model = RavelMDASNetwork(

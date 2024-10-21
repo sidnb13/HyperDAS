@@ -1,0 +1,26 @@
+# version: '3.8'
+services:
+  alignment-testbed:
+    container_name: hyperdas
+    image: hyperdas
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    volumes:
+      - ./:/workspace/HyperDAS/
+      - ./assets:/workspace/HyperDAS/assets
+      - ~/.cache/huggingface/:/.cache/huggingface/
+      - ./.vscode-server:/.vscode-server # volume of the vscode plugins
+      - ~/.ssh/id_ed25519:/root/.ssh/id_ed25519:ro # volume of the ssh keys
+    # set environment variables
+    env_file: .env
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command: tail -f /dev/null
+    ipc: host
+    restart: unless-stopped

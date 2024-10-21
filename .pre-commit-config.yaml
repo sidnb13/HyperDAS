@@ -6,5 +6,4 @@ repos:
         args: 
           - --fix
           - --exit-non-zero-on-fix
-          - --select=I001  # Run isort (I)
       - id: ruff-format

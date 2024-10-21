@@ -870,8 +870,6 @@ class LlamaInterpretor(nn.Module):
 
         das_metrics = {}
 
-        # Run target model with edit vectors.
-        # This adds the edit vectors to the given hidden state at the specified batch index, position, and layer
         def representation_swap(module, input, output):
             nonlocal das_metrics
             base_hidden_states = output[0].clone()
@@ -943,7 +941,10 @@ class LlamaInterpretor(nn.Module):
         # Now editing the target model
         if intervention_layer == 0:
             hooks = [
-                (self.target_model.model.embed_tokens, embedding_representation_swap)
+                (
+                    self.target_model.model.embed_tokens,
+                    embedding_representation_swap,
+                )
             ]
         else:
             hooks = [
