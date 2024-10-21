@@ -126,7 +126,7 @@ def _can_use_fast(subspaces):
     try:
         subspaces = torch.tensor(subspaces)
         row_same_val = torch.all(subspaces == subspaces[0], axis=1).all()
-    except:
+    except:  # noqa: E722
         tensorfiable = False
 
     return row_same_val and tensorfiable
@@ -199,7 +199,7 @@ class BoundlessRotatedSpaceIntervention(
     def __init__(self, embed_dim, torch_dtype, **kwargs):
         super().__init__(**kwargs)
         self.embed_dim = embed_dim
-        rotate_layer = RotateLayer(self.embed_dim, torch_dtype=torch_dtype)
+        rotate_layer = RotateLayer(self.embed_dim)
         self.rotate_layer = torch.nn.utils.parametrizations.orthogonal(rotate_layer)
         self.intervention_boundaries = torch.nn.Parameter(
             torch.tensor([0.5], dtype=torch_dtype), requires_grad=True

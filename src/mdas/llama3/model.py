@@ -3,10 +3,11 @@ import os
 
 import torch
 import torch.nn as nn
-import wandb
 from tqdm import tqdm
 from transformers import LlamaForCausalLM
 
+import wandb
+from logger import get_logger
 from pyvene import (
     IntervenableConfig,
     IntervenableModel,
@@ -14,6 +15,8 @@ from pyvene import (
     RepresentationConfig,
     count_parameters,
 )
+
+logger = get_logger(__name__)
 
 
 class RavelMDASNetwork(nn.Module):
@@ -78,7 +81,6 @@ class RavelMDASNetwork(nn.Module):
             )
 
         # print(source_intervention_position.unsqueeze(0).shape, base_intervention_position.unsqueeze(0).shape)
-        b_s = base_input_ids.shape[0]
         intervention_locations = {
             "sources->base": (
                 source_intervention_position.unsqueeze(0).unsqueeze(-1),
@@ -110,7 +112,11 @@ class RavelMDASNetwork(nn.Module):
         is_causal = []
 
         with torch.no_grad():
-            for batch_id, batch in enumerate(test_loader):
+            from tqdm import tqdm
+
+            for batch_id, batch in tqdm(
+                enumerate(test_loader), total=len(test_loader), desc="Evaluating"
+            ):
                 if self.intervention_location == "last_entity_token":
                     base_intervention_position = batch["base_entity_position_ids"].to(
                         "cuda"
@@ -169,7 +175,6 @@ class RavelMDASNetwork(nn.Module):
                     ).item()
                     if is_correct:
                         correct_idxs.append(batch_id * len(batch["labels"]) + i)
-
         total_causal = sum(is_causal)
         total_isolate = len(is_causal) - total_causal
 
@@ -214,10 +219,11 @@ class RavelMDASNetwork(nn.Module):
 
         optimizer = torch.optim.AdamW(optimizer_params, lr=lr, weight_decay=0)
 
-        total_steps = len(train_loader) * epochs
-        print("Model trainable parameters: ", count_parameters(self.intervenable.model))
-        print(
-            "Intervention trainable parameters: ", self.intervenable.count_parameters()
+        logger.info(
+            f"Model trainable parameters: {count_parameters(self.intervenable.model)}"
+        )
+        logger.info(
+            f"Intervention trainable parameters: {self.intervenable.count_parameters()}"
         )
 
         cur_steps = 0
@@ -253,7 +259,7 @@ class RavelMDASNetwork(nn.Module):
                                     }
                                 )
 
-                            print(
+                            logger.info(
                                 f"Disentangle Acc: {disentangle_acc}, Causal Acc: {causal_acc}, Isolate Acc: {isolate_acc}"
                             )
 

@@ -1,4 +1,5 @@
 import argparse
+import gc
 import os
 
 import hydra
@@ -6,6 +7,7 @@ import torch
 from datasets import load_from_disk
 from dotenv import load_dotenv
 from hydra.core.hydra_config import HydraConfig
+from hydra.utils import get_original_cwd, to_absolute_path
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
@@ -89,24 +91,46 @@ def run_experiment(
 
 @hydra.main(version_base=None, config_path="config", config_name="config")
 def hydra_main(cfg: DictConfig):
-    # Get the total number of GPUs
-    num_gpus = torch.cuda.device_count()
-    # Get the current job number from Hydra's multi-run counter
     try:
-        job_num = HydraConfig.get().job.num
-    except Exception:
-        # If there's no multirun in progress, default to 0
-        job_num = 0
-    # Get a unique job identifier (output directory)
-    job_id = HydraConfig.get().run.dir
-    # Assign a GPU based on the job number
-    gpu_id = job_num % num_gpus
-    device = f"cuda:{gpu_id}"
-    torch.cuda.set_device(device)
+        logger.info(f"Working directory : {os.getcwd()}")
+        logger.info(f"Original working directory    : {get_original_cwd()}")
+        logger.info(f"to_absolute_path('foo')       : {to_absolute_path('foo')}")
+        logger.info(f"to_absolute_path('/foo')      : {to_absolute_path('/foo')}")
+        logger.info(f"Config: {OmegaConf.to_yaml(cfg)}")
 
-    # Pass the device to your run_experiment function
-    logger.debug("Launching job %s on GPU %s", job_id, device)
-    run_experiment(cfg, device)
+        # Get the total number of GPUs
+        num_gpus = torch.cuda.device_count()
+        logger.info(f"Number of GPUs: {num_gpus}")
+
+        # Get the current job number from Hydra's multi-run counter
+        try:
+            job_num = HydraConfig.get().job.num
+            logger.info(f"Job number: {job_num}")
+        except Exception:
+            # If we're not in a multirun, job.num doesn't exist
+            job_num = 0
+            logger.debug("Not in a multirun, defaulting job number to 0")
+
+        # Get a unique job identifier (output directory)
+        job_id = HydraConfig.get().run.dir
+        logger.info(f"Job ID: {job_id}")
+
+        # Assign a GPU based on the job number
+        gpu_id = job_num % num_gpus
+        device = f"cuda:{gpu_id}"
+        logger.info(f"Assigned device: {device}")
+
+        torch.cuda.set_device(device)
+
+        # Pass the device to your run_experiment function
+        logger.info(f"Launching job {job_id} on GPU {device}")
+        run_experiment(cfg, device)
+
+        torch.cuda.empty_cache()
+        gc.collect()
+    except Exception as e:
+        logger.error(f"An error occurred in hydra_main: {str(e)}", exc_info=True)
+        raise
 
 
 def argparse_main():

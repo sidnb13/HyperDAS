@@ -1,4 +1,5 @@
 import argparse
+import gc
 import os
 
 import hydra
@@ -150,8 +151,13 @@ def hydra_main(cfg: DictConfig):
         logger.info(f"Number of GPUs: {num_gpus}")
 
         # Get the current job number from Hydra's multi-run counter
-        job_num = HydraConfig.get().job.num
-        logger.info(f"Job number: {job_num}")
+        try:
+            job_num = HydraConfig.get().job.num
+            logger.info(f"Job number: {job_num}")
+        except Exception:
+            # If we're not in a multirun, job.num doesn't exist
+            job_num = 0
+            logger.debug("Not in a multirun, defaulting job number to 0")
 
         # Get a unique job identifier (output directory)
         job_id = HydraConfig.get().run.dir
@@ -167,6 +173,9 @@ def hydra_main(cfg: DictConfig):
         # Pass the device to your run_experiment function
         logger.info(f"Launching job {job_id} on GPU {device}")
         run_experiment(cfg, device)
+
+        torch.cuda.empty_cache()
+        gc.collect()
     except Exception as e:
         logger.error(f"An error occurred in hydra_main: {str(e)}", exc_info=True)
         raise
