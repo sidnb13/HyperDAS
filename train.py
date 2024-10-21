@@ -123,7 +123,11 @@ def hydra_main(cfg: DictConfig):
     # Get the total number of GPUs
     num_gpus = torch.cuda.device_count()
     # Get the current job number from Hydra's multi-run counter
-    job_num = HydraConfig.get().job.num
+    try:
+        job_num = HydraConfig.get().job.num
+    except Exception:
+        # If there's no multirun in progress, default to 0
+        job_num = 0
     # Get a unique job identifier (output directory)
     job_id = HydraConfig.get().run.dir
     # Assign a GPU based on the job number
@@ -169,7 +173,7 @@ def argparse_main():
     parser.add_argument("--sparsity_loss_weight_end", type=float, default=1.0)
 
     parser.add_argument("--target_intervention_num", type=int, default=None)
-    parser.add_argument("--causal_loss_weight", type=float, default=3.5)
+    parser.add_argument("--causal_loss_weight", type=float, default=1)
     parser.add_argument("--iso_loss_weight", type=float, default=1)
 
     parser.add_argument(

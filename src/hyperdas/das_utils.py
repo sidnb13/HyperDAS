@@ -689,6 +689,7 @@ class QuasiProjectiveIntervention(
             top_k_values,
             importance_power=self.importance_power,
         )
+
         output = base + (source_interchange - base_interchange)
 
         if self.compute_metrics and self.training:
@@ -703,6 +704,8 @@ class QuasiProjectiveIntervention(
                 metrics["avg_dictionary_topk_rank"] = (
                     torch.linalg.matrix_rank(reshaped_values).float().mean().item()
                 )
+                metrics["source_interchange_norm"] = source_interchange.norm().item()
+                metrics["base_interchange_norm"] = base_interchange.norm().item()
                 metrics["intervention_norm"] = (
                     (source_interchange - base_interchange).norm().item()
                 )

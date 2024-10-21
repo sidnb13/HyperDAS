@@ -2,60 +2,47 @@ import argparse
 import os
 
 import hydra
-import wandb
+import torch
 from datasets import load_from_disk
 from dotenv import load_dotenv
+from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 
+import wandb
+from logger import get_logger
 from src.hyperdas.data_utils import get_ravel_collate_fn
 from src.mdas.llama3.model import RavelMDASNetwork
+
+logger = get_logger(__name__)
 
 load_dotenv()
 
 
 def run_experiment(
-    log_wandb=True,
-    wandb_project="hypernetworks-interpretor",
-    wandb_run_name=None,
-    intervention_layer=15,
-    model_name_or_path="./models/llama3-8b",
-    load_trained_from=None,
-    batch_size=8,
-    save_dir=None,
-    n_epochs=1,
-    das_dimension=None,
-    lr=3e-5,
-    eval_per_steps=100,
-    checkpoint_per_steps=500,
-    test_path=None,
-    train_path=None,
-    causal_loss_weight=1,
-    intervention_location="last_entity_token",
-    **kwargs,
+    config: DictConfig,
+    device: str | torch.DeviceObjType = "cuda",
 ):
-    if log_wandb:
+    if config.log_wandb:
         wandb.init(
-            project=wandb_project,
-            name=wandb_run_name,
-            config={
-                "targetmodel": model_name_or_path,
-                "dataset": "ravel",
-                "intervention_layer": intervention_layer,
-                "das_dimension": das_dimension,
-            },
+            project=config.wandb_project,
+            name=config.wandb_run_name,
+            config=OmegaConf.to_container(config),
+            group=config.wandb_group,
+            tags=config.wandb_tags,
+            notes=config.wandb_notes,
         )
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+    tokenizer = AutoTokenizer.from_pretrained(config.model_name_or_path)
     tokenizer.pad_token = tokenizer.eos_token
 
     tokenizer.padding_side = "left"
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.pad_token_id = tokenizer.eos_token_id
 
-    train_set = load_from_disk(train_path)
-    test_set = load_from_disk(test_path)
+    train_set = load_from_disk(config.train_path)
+    test_set = load_from_disk(config.test_path)
 
     collate_fn = get_ravel_collate_fn(
         tokenizer,
@@ -66,42 +53,57 @@ def run_experiment(
     )
 
     data_loader = DataLoader(
-        train_set, batch_size=batch_size, collate_fn=collate_fn, shuffle=True
+        train_set, batch_size=config.batch_size, collate_fn=collate_fn, shuffle=True
     )
 
     test_data_loader = DataLoader(
-        test_set, batch_size=batch_size, collate_fn=collate_fn, shuffle=True
+        test_set, batch_size=config.batch_size, collate_fn=collate_fn, shuffle=True
     )
 
     model = RavelMDASNetwork(
-        model_name_or_path=model_name_or_path,
-        intervention_layer=intervention_layer,
-        das_dimension=das_dimension,
-        intervention_location=intervention_location,
+        model_name_or_path=config.model_name_or_path,
+        intervention_layer=config.intervention_layer,
+        das_dimension=config.das_dimension,
+        intervention_location=config.intervention_location,
     )
 
-    model = model.cuda()
+    model = model.to(device)
 
     model.run_train(
         train_loader=data_loader,
         test_loader=test_data_loader,
-        epochs=n_epochs,
-        checkpoint_per_steps=checkpoint_per_steps,
-        eval_per_steps=eval_per_steps,
-        save_dir=save_dir,
-        causal_loss_weight=causal_loss_weight,
-        lr=lr,
+        epochs=config.n_epochs,
+        checkpoint_per_steps=config.checkpoint_per_steps,
+        eval_per_steps=config.eval_per_steps,
+        save_dir=config.save_dir,
+        causal_loss_weight=config.causal_loss_weight,
+        lr=config.lr,
     )
 
-    if log_wandb:
+    if config.log_wandb:
         wandb.finish()
 
 
 @hydra.main(version_base=None, config_path="config", config_name="config")
 def hydra_main(cfg: DictConfig):
-    # Convert DictConfig to a regular dictionary
-    args = OmegaConf.to_container(cfg, resolve=True)
-    run_experiment(**args)
+    # Get the total number of GPUs
+    num_gpus = torch.cuda.device_count()
+    # Get the current job number from Hydra's multi-run counter
+    try:
+        job_num = HydraConfig.get().job.num
+    except Exception:
+        # If there's no multirun in progress, default to 0
+        job_num = 0
+    # Get a unique job identifier (output directory)
+    job_id = HydraConfig.get().run.dir
+    # Assign a GPU based on the job number
+    gpu_id = job_num % num_gpus
+    device = f"cuda:{gpu_id}"
+    torch.cuda.set_device(device)
+
+    # Pass the device to your run_experiment function
+    logger.debug("Launching job %s on GPU %s", job_id, device)
+    run_experiment(cfg, device)
 
 
 def argparse_main():
