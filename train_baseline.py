@@ -104,7 +104,7 @@ def hydra_main(cfg: DictConfig):
 
         # Get the current job number from Hydra's multi-run counter
         try:
-            job_num = HydraConfig.get().job.num
+            job_num = getattr(HydraConfig.get().job, "num", 0)
             logger.info(f"Job number: {job_num}")
         except Exception:
             # If we're not in a multirun, job.num doesn't exist

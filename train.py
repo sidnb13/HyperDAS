@@ -29,6 +29,14 @@ def run_experiment(
 ):
     """if save_dir is not None:
     save_dir = os.path.join("./models", save_dir)"""
+
+    if config.debug_model:
+        config.inference_modes = ["groundtruth"]
+
+    if "default" in config.inference_modes:
+        config.inference_modes.remove("default")
+        config.inference_modes.append(None)
+
     if config.log_wandb:
         wandb.init(
             project=config.wandb_project,
@@ -38,10 +46,6 @@ def run_experiment(
             tags=config.wandb_tags,
             notes=config.wandb_notes,
         )
-
-    if "default" in config.inference_modes:
-        config.inference_modes.remove("default")
-        config.inference_modes.append(None)
 
     tokenizer = AutoTokenizer.from_pretrained(config.model_name_or_path)
     tokenizer.pad_token = tokenizer.eos_token
@@ -64,7 +68,12 @@ def run_experiment(
         contain_entity_position="groundtruth" in config.inference_modes,
     )
 
-    is_multirun = HydraConfig.get().job.num is not None
+    # very hacky
+    try:
+        getattr(HydraConfig.get().job, "num")
+        is_multirun = False
+    except Exception:
+        is_multirun = False
     num_workers = 0 if is_multirun else config.num_workers
 
     data_loader = DataLoader(
@@ -131,6 +140,7 @@ def run_experiment(
         lr=config.lr,
         save_model=config.save_model,
         target_intervention_num=config.target_intervention_num,
+        debug_model=config.debug_model,
     )
 
     if config.log_wandb:
@@ -148,11 +158,11 @@ def hydra_main(cfg: DictConfig):
 
         # Get the total number of GPUs
         num_gpus = torch.cuda.device_count()
-        logger.info(f"Number of GPUs: {num_gpus}")
+        logger.info(f"Number of GPUs available: {num_gpus}")
 
         # Get the current job number from Hydra's multi-run counter
         try:
-            job_num = HydraConfig.get().job.num
+            job_num = getattr(HydraConfig.get().job, "num", 0)
             logger.info(f"Job number: {job_num}")
         except Exception:
             # If we're not in a multirun, job.num doesn't exist

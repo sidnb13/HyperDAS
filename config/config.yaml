@@ -48,6 +48,7 @@ break_asymmetric: false
 subspace_module: "ReflectSelect"
 weight_decay: 0.01
 max_grad_norm: 4.0
+debug_model: false
 
 # ridge projective parameters
 top_k_parameter: 128

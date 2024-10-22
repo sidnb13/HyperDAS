@@ -677,6 +677,7 @@ class RavelInterpretorHypernetwork(nn.Module):
         save_model=False,
         schedule_sparsity_loss=True,
         target_intervention_num=None,
+        debug_model=False,
     ):
         if save_dir is not None and not os.path.exists(save_dir):
             os.makedirs(save_dir)
@@ -814,21 +815,57 @@ class RavelInterpretorHypernetwork(nn.Module):
                     # Move all batch items to device
                     batch = {k: v.to("cuda") for k, v in batch.items()}
 
-                    prediction = self.forward(
-                        editor_input_ids=batch["editor_input_ids"],
-                        base_input_ids=batch["base_input_ids"],
-                        base_attention_mask=batch["base_attention_mask"],
-                        base_intervention_mask=batch["base_intervention_mask"],
-                        source_input_ids=batch["source_input_ids"],
-                        source_attention_mask=batch["source_attention_mask"],
-                        source_intervention_mask=batch["source_intervention_mask"],
-                        labels=batch["labels"],
-                        is_causal=batch["is_causal"],
-                        causal_loss_weight=causal_loss_weight,
-                        iso_loss_weight=iso_loss_weight,
-                        output_intervention_weight=True,
-                        inference_mode=None,
-                    )
+                    if not debug_model:
+                        prediction = self.forward(
+                            editor_input_ids=batch["editor_input_ids"],
+                            base_input_ids=batch["base_input_ids"],
+                            base_attention_mask=batch["base_attention_mask"],
+                            base_intervention_mask=batch["base_intervention_mask"],
+                            source_input_ids=batch["source_input_ids"],
+                            source_attention_mask=batch["source_attention_mask"],
+                            source_intervention_mask=batch["source_intervention_mask"],
+                            labels=batch["labels"],
+                            is_causal=batch["is_causal"],
+                            causal_loss_weight=causal_loss_weight,
+                            iso_loss_weight=iso_loss_weight,
+                            output_intervention_weight=True,
+                            inference_mode=None,
+                        )
+                    else:
+                        intervention_weight = torch.zeros(
+                            len(batch["editor_input_ids"]),
+                            batch["source_input_ids"].shape[1] + 1,
+                            batch["base_input_ids"].shape[1],
+                            device=batch["editor_input_ids"].device,
+                        )
+                        intervention_weight[:, -1, :] = 1.0
+
+                        for i in range(len(batch["base_entity_position_ids"])):
+                            intervention_weight[
+                                i, -1, batch["base_entity_position_ids"][i]
+                            ] = 0.0
+                            intervention_weight[
+                                i,
+                                batch["source_entity_position_ids"][i],
+                                batch["base_entity_position_ids"][i],
+                            ] = 1.0
+
+                        prediction = self.forward(
+                            editor_input_ids=batch["editor_input_ids"],
+                            base_input_ids=batch["base_input_ids"],
+                            base_attention_mask=batch["base_attention_mask"],
+                            base_intervention_mask=batch["base_intervention_mask"],
+                            source_input_ids=batch["source_input_ids"],
+                            source_attention_mask=batch["source_attention_mask"],
+                            source_intervention_mask=batch["source_intervention_mask"],
+                            labels=batch["labels"],
+                            is_causal=batch["is_causal"],
+                            causal_loss_weight=causal_loss_weight,
+                            iso_loss_weight=iso_loss_weight,
+                            output_intervention_weight=True,
+                            intervention_weight=intervention_weight,
+                            inference_mode="groundtruth",
+                        )
 
                     training_loss = 0
 
@@ -880,7 +917,6 @@ class RavelInterpretorHypernetwork(nn.Module):
                         "counters/step": cur_steps,
                         "counters/epoch": cur_steps / len(train_loader),
                         "train_batch_prediction_loss": prediction_loss.item(),
-                        "train_batch_sparsity_loss": source_selection_sparsity_loss.item(),
                         "grad_norm": grad_norm.item(),
                         **prediction.metrics,
                     }
@@ -902,6 +938,7 @@ class RavelInterpretorHypernetwork(nn.Module):
                             output_metrics["sparsity_weight"] = (
                                 step_sparsity_loss_weight.item()
                             )
+                            output_metrics["train_batch_penalty"] = penalty.item()
 
                         logger.info(output_metrics)
 
