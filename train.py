@@ -71,7 +71,7 @@ def run_experiment(
     # very hacky
     try:
         getattr(HydraConfig.get().job, "num")
-        is_multirun = False
+        is_multirun = True
     except Exception:
         is_multirun = False
     num_workers = 0 if is_multirun else config.num_workers
