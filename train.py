@@ -111,6 +111,7 @@ def run_experiment(
         lambda_parameter=config.lambda_parameter,
         epsilon=config.epsilon,
         importance_power=config.importance_power,
+        ridge_parameterization=config.ridge_parameterization,
         device=device,
         compute_metrics=config.compute_metrics,
         max_eval_steps=config.max_eval_steps,

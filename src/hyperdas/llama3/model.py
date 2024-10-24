@@ -39,6 +39,7 @@ class RavelInterpretorHypernetwork(nn.Module):
         lambda_parameter: float = 10.0,
         importance_power: float = -2.0,
         epsilon: float = 1e-6,
+        ridge_parameterization: str = "inv_alpha",
         device: str = "cuda",
         compute_metrics: bool = False,
         max_eval_steps: int = -1,
@@ -68,6 +69,7 @@ class RavelInterpretorHypernetwork(nn.Module):
         self.interpretor_config.lambda_parameter = lambda_parameter
         self.interpretor_config.importance_power = importance_power
         self.interpretor_config.epsilon = epsilon
+        self.interpretor_config.ridge_parameterization = ridge_parameterization
 
         self.interpretor = LlamaInterpretor(
             self.interpretor_config,
@@ -749,8 +751,8 @@ class RavelInterpretorHypernetwork(nn.Module):
                 num_datapoints_in_epoch = 0
                 epoch_train_loss = 0
                 # Train loop
-                for step, batch in enumerate(train_loader):
-                    if step >= total_steps:
+                for batch in train_loader:
+                    if cur_steps >= total_steps:
                         logger.info("Training stopped. Reached max steps.")
                         break
                     if eval_per_steps is not None:
@@ -798,13 +800,14 @@ class RavelInterpretorHypernetwork(nn.Module):
                             logger.info(
                                 "Saving model to {}".format(
                                     os.path.join(
-                                        save_dir, f"model_epoch_{epoch}_step_{step}"
+                                        save_dir,
+                                        f"model_epoch_{epoch}_step_{cur_steps}",
                                     )
                                 )
                             )
                             self.save_model(
                                 os.path.join(
-                                    save_dir, f"model_epoch_{epoch}_step_{step}"
+                                    save_dir, f"model_epoch_{epoch}_step_{cur_steps}"
                                 )
                             )
 

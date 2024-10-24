@@ -56,6 +56,7 @@ class LlamaInterpretorConfig(LlamaConfig):
     lambda_parameter: int = 10
     importance_power: int = -2
     epsilon: float = 1e-6
+    ridge_parameterization = "inv_alpha"
 
 
 class LlamaModelWithCrossAttention(LlamaModel):
@@ -577,6 +578,7 @@ class LlamaInterpretor(nn.Module):
                     importance_power=config.importance_power,
                     epsilon=config.epsilon,
                     return_penalty=True,
+                    ridge_parameterization=config.ridge_parameterization,
                     torch_dtype=config.torch_dtype,
                     compute_metrics=compute_metrics,
                 )

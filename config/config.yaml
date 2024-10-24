@@ -55,6 +55,8 @@ top_k_parameter: 128
 lambda_parameter: 1
 importance_power: -2
 epsilon: 1e-6
+# inv_alpha, topk_ste, sigmoid
+ridge_parameterization: "inv_alpha"
 
 # Specific parameters for train_ablation.py
 # (Add any specific parameters here)
