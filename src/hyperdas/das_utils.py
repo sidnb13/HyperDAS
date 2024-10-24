@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import Dict, Tuple
+from typing import Dict, Literal, Tuple
 
 import torch
 import torch.nn as nn
@@ -524,6 +524,21 @@ class ReflectiveLowRankRotatedSpaceIntervention(
         return f"ReflectiveLowRankRotatedSpaceIntervention(embed_dim={self.embed_dim}, low_rank_dimension={self.low_rank_dimension}, sparsity={self.sparsity:.4f})"
 
 
+class TopKSTE(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input, k):
+        vals, indices = torch.topk(input, k, dim=-1)
+        ctx.save_for_backward(indices, torch.tensor(input.shape))
+        return vals, indices
+
+    @staticmethod
+    def backward(ctx, grad_output, grad_indices):
+        indices, input_shape = ctx.saved_tensors
+        grad_input = torch.zeros(input_shape, device=grad_output.device)
+        grad_input.scatter_(1, indices, grad_output)
+        return grad_input, None
+
+
 class QuasiProjectiveIntervention(
     TrainableIntervention, DistributedRepresentationIntervention
 ):
@@ -548,6 +563,7 @@ class QuasiProjectiveIntervention(
         importance_power=-2,
         torch_dtype=torch.bfloat16,
         return_penalty=True,
+        parameterization: Literal["inv_alpha", "ste", "sigmoid"] = "inv_alpha",
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -559,6 +575,8 @@ class QuasiProjectiveIntervention(
         self.lambda_parameter = lambda_parameter
         self.importance_power = importance_power
         self.epsilon = epsilon
+        self.parameterization = parameterization
+        self.feature_dim = embed_dim
 
         self.edit_instruction_encodings = nn.Sequential(
             nn.Linear(in_features=embed_dim, out_features=dict_size, bias=True).to(
@@ -609,13 +627,15 @@ class QuasiProjectiveIntervention(
 
         metrics = {}
 
-        # We add an epsilon for instability prevention
-        # denominator scores will be a component inside the matrix inversion
-        # Note that alpha < 0 implies that denominator_scores_i is low for the most important features
-        denominator_scores = torch.pow(
-            importance_scores + self.epsilon, importance_power
-        )  # batch, num_active_features
-        # denominator_scores:
+        if self.parameterization == "inv_alpha":
+            # We add an epsilon for instability prevention
+            # denominator scores will be a component inside the matrix inversion
+            # Note that alpha < 0 implies that denominator_scores_i is low for the most important features
+            denominator_scores = torch.pow(
+                importance_scores + self.epsilon, importance_power
+            )  # batch, num_active_features
+        elif self.parameterization == "sigmoid":
+            denominator_scores = torch.sigmoid(importance_scores)
 
         # Compute the ridge regression solution
         XTX = torch.matmul(
@@ -623,7 +643,15 @@ class QuasiProjectiveIntervention(
         )  # XTX: batch x d_embed x num_active_features
         XTY = torch.matmul(X, Y.transpose(-2, -1))  # XTY: batch x d_embed x seq
         # diag_denominator_scores = torch.diag_embed(denominator_scores)  #diag_denominator_scores: batch x num_active_features x num_active_features
-        regularized_XTX = XTX + torch.diag_embed(denominator_scores)  # regularized_XTX:
+        if self.parameterization == "topk_ste":
+            # Unmodified ridge formulation
+            regularized_XTX = XTX + self.lambda_parameter * torch.eye(
+                self.feature_dim
+            )  # regularized_XTX:
+        else:
+            regularized_XTX = XTX + torch.diag_embed(
+                denominator_scores
+            )  # regularized_XTX:
 
         # Cast regularized_XTX and XTY to float32
         regularized_XTX = regularized_XTX.to(torch.float32)
@@ -664,10 +692,15 @@ class QuasiProjectiveIntervention(
         )  # dictionary_encodings: batch x d_embed
 
         # Perform top-k index selection
-        top_k_values, top_k_indices = torch.topk(
-            dictionary_encodings, self.top_k_parameter, dim=-1
-        )
         # top_k_indices: batch x k; top_k_values: batch x k
+        if self.parameterization == "topk_ste":
+            top_k_values, top_k_indices = TopKSTE.apply(
+                dictionary_encodings, self.top_k_parameter
+            )
+        else:
+            top_k_values, top_k_indices = torch.topk(
+                dictionary_encodings, self.top_k_parameter, dim=-1
+            )
 
         # Remove indices where the value is less than zero
         # positive_mask = top_k_values > 0

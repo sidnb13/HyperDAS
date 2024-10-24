@@ -816,6 +816,15 @@ class RavelInterpretorHypernetwork(nn.Module):
                     batch = {k: v.to("cuda") for k, v in batch.items()}
 
                     if not debug_model:
+                        if all(
+                            inference_mode is None for inference_mode in inference_modes
+                        ):
+                            logger.warning(
+                                "Inference modes are none -> will use hypernetwork attention weights for intervention"
+                            )
+                        logger.debug(
+                            f"Using inference modes in train: {inference_modes[0]}"
+                        )
                         prediction = self.forward(
                             editor_input_ids=batch["editor_input_ids"],
                             base_input_ids=batch["base_input_ids"],
@@ -829,7 +838,8 @@ class RavelInterpretorHypernetwork(nn.Module):
                             causal_loss_weight=causal_loss_weight,
                             iso_loss_weight=iso_loss_weight,
                             output_intervention_weight=True,
-                            inference_mode=None,
+                            # NOTE: this results in using hypernetwork attn weights for intervention
+                            inference_mode=inference_modes[0],
                         )
                     else:
                         intervention_weight = torch.zeros(

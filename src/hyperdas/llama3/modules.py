@@ -784,6 +784,10 @@ class LlamaInterpretor(nn.Module):
                     dtype=hypernet_hidden_states.dtype
                 )
             else:
+                logger.warning(
+                    "Using hypernetwork attention weights for intervention, this may hurt performance significantly."
+                    "Consider setting "
+                )
                 # Multiply the outputs by normalization factors
                 hypernet_hidden_states, intervention_weight = interpretor_output
                 intervention_weight = intervention_weight.squeeze()
