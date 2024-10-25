@@ -565,7 +565,9 @@ class QuasiProjectiveIntervention(
         importance_power=-2,
         torch_dtype=torch.bfloat16,
         return_penalty=True,
-        ridge_parameterization: Literal["inv_alpha", "ste", "sigmoid"] = "inv_alpha",
+        ridge_parameterization: Literal[
+            "inv_alpha", "ste", "sigmoid", "softmax"
+        ] = "inv_alpha",
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -583,6 +585,7 @@ class QuasiProjectiveIntervention(
             "inv_alpha",
             "topk_ste",
             "sigmoid",
+            "softmax",
         ], "Invalid ridge_parameterization"
 
         self.feature_dim = embed_dim
@@ -645,6 +648,8 @@ class QuasiProjectiveIntervention(
             )  # batch, num_active_features
         elif self.ridge_parameterization == "sigmoid":
             denominator_scores = torch.sigmoid(importance_scores)
+        elif self.ridge_parameterization == "softmax":
+            denominator_scores = importance_scores.softmax(-1)
 
         # Compute the ridge regression solution
         XTX = torch.matmul(
@@ -784,10 +789,28 @@ class QuasiProjectiveIntervention(
                 )
 
         if self.return_penalty:
-            penalty = torch.sum(
-                self.lambda_parameter
-                / (self.lambda_parameter + top_k_values**self.importance_power)
-            )
+            if self.ridge_parameterization == "inv_alpha":
+                penalty = torch.sum(
+                    self.lambda_parameter
+                    / (self.lambda_parameter + top_k_values**self.importance_power)
+                )
+            elif self.ridge_parameterization == "sigmoid":
+                penalty = torch.sum(
+                    self.lambda_parameter
+                    / (self.lambda_parameter + top_k_values.sigmoid())
+                )
+            elif self.ridge_parameterization == "softmax":
+                penalty = torch.sum(
+                    self.lambda_parameter
+                    / (self.lambda_parameter + top_k_values.softmax(-1))
+                )
+            else:
+                penalty = torch.full(
+                    (1,),
+                    1 / (1 + self.lambda_parameter),
+                    dtype=output.dtype,
+                    device=output.device,
+                )
             metrics["lambda_penalty"] = penalty.item()
             if self.penalty is not None:
                 raise ValueError("Penalty is already set.")
