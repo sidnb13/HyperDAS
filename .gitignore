@@ -8,7 +8,6 @@ data/
 *.pdf
 *.out
 .env
-scripts/
 
 .ruff_cache/
 

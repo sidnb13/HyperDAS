@@ -35,11 +35,14 @@ class RavelInterpretorHypernetwork(nn.Module):
         ablate_base_token_attention: bool = False,
         ablate_source_token_attention: bool = False,
         break_asymmetric: bool = False,
+        return_penalty: bool = True,
         top_k_parameter: int = 128,
         lambda_parameter: float = 10.0,
         importance_power: float = -2.0,
         epsilon: float = 1e-6,
         ridge_parameterization: str = "inv_alpha",
+        do_topk: bool = True,
+        dict_size: int = None,
         device: str = "cuda",
         compute_metrics: bool = False,
         max_eval_steps: int = -1,
@@ -70,6 +73,9 @@ class RavelInterpretorHypernetwork(nn.Module):
         self.interpretor_config.importance_power = importance_power
         self.interpretor_config.epsilon = epsilon
         self.interpretor_config.ridge_parameterization = ridge_parameterization
+        self.interpretor_config.return_penalty = return_penalty
+        self.interpretor_config.do_topk = do_topk
+        self.interpretor_config.dict_size = dict_size
 
         self.interpretor = LlamaInterpretor(
             self.interpretor_config,
@@ -917,6 +923,10 @@ class RavelInterpretorHypernetwork(nn.Module):
                     grad_norm = nn.utils.clip_grad_norm_(
                         self.parameters(), max_grad_norm
                     )
+
+                    # Log more gradient norms
+                    grad_norm_metrics = self.interpretor.das_module.gradient_norms()
+
                     self.opt.step()
                     # metrics
                     epoch_train_loss += training_loss.item() * current_batch_size
@@ -932,6 +942,7 @@ class RavelInterpretorHypernetwork(nn.Module):
                         "train_batch_prediction_loss": prediction_loss.item(),
                         "grad_norm": grad_norm.item(),
                         **prediction.metrics,
+                        **grad_norm_metrics,
                     }
                     if target_intervention_num is not None:
                         metrics["train_batch_#intervention_loss"] = (
@@ -941,7 +952,11 @@ class RavelInterpretorHypernetwork(nn.Module):
                     if isinstance(
                         self.interpretor.das_module, QuasiProjectiveIntervention
                     ):
-                        metrics["train_batch_penalty"] = penalty.item()
+                        metrics["train_batch_penalty"] = (
+                            penalty.item()
+                            if isinstance(penalty, torch.Tensor)
+                            else penalty
+                        )
 
                     if wandb.run:
                         wandb.log(metrics)
@@ -951,7 +966,11 @@ class RavelInterpretorHypernetwork(nn.Module):
                             output_metrics["sparsity_weight"] = (
                                 step_sparsity_loss_weight.item()
                             )
-                            output_metrics["train_batch_penalty"] = penalty.item()
+                            output_metrics["train_batch_penalty"] = (
+                                penalty.item()
+                                if isinstance(penalty, torch.Tensor)
+                                else penalty
+                            )
 
                         logger.info(output_metrics)
 

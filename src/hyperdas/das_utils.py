@@ -99,6 +99,9 @@ class Intervention(nn.Module):
     def forward(self, base, source, subspaces=None) -> Tuple[torch.Tensor, Dict]:
         pass
 
+    def gradient_norms(self) -> Dict[str, float]:
+        return {}
+
 
 class DistributedRepresentationIntervention(nn.Module):
     """Distributed representation."""
@@ -538,7 +541,15 @@ class TopKSTE(torch.autograd.Function):
             tuple(input_shape), dtype=grad_output.dtype, device=grad_output.device
         )
         grad_input.scatter_(1, indices, grad_output)
+
+        # Compute and store gradient norm
+        TopKSTE.last_grad_norm = grad_input.detach().norm().item()
+
         return grad_input, None
+
+    @staticmethod
+    def get_last_grad_norm():
+        return getattr(TopKSTE, "last_grad_norm", None)
 
 
 class QuasiProjectiveIntervention(
@@ -568,6 +579,7 @@ class QuasiProjectiveIntervention(
         ridge_parameterization: Literal[
             "inv_alpha", "ste", "sigmoid", "softmax"
         ] = "inv_alpha",
+        do_topk=True,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -580,6 +592,7 @@ class QuasiProjectiveIntervention(
         self.importance_power = importance_power
         self.epsilon = epsilon
         self.ridge_parameterization = ridge_parameterization
+        self.do_topk = do_topk
 
         assert ridge_parameterization in [
             "inv_alpha",
@@ -609,9 +622,34 @@ class QuasiProjectiveIntervention(
             dtype=torch_dtype
         )
 
+    def gradient_norms(self) -> Dict[str, float]:
+        metrics = {}
+        # Compute mean grad norm for edit_instruction_encodings
+        edit_instruction_grad_norms = []
+        for param in self.edit_instruction_encodings[0].parameters():
+            if param.grad is not None:
+                edit_instruction_grad_norms.append(param.grad.detach().norm().item())
+        if edit_instruction_grad_norms:
+            metrics["grad_norm/edit_instruction_encodings"] = sum(
+                edit_instruction_grad_norms
+            ) / len(edit_instruction_grad_norms)
+
+        # Compute mean grad norm for basis_dictionary
+        basis_dictionary_grad_norms = []
+        for param in self.basis_dictionary.parameters():
+            if param.grad is not None:
+                basis_dictionary_grad_norms.append(param.grad.detach().norm().item())
+        if basis_dictionary_grad_norms:
+            metrics["grad_norm/basis_dictionary"] = sum(
+                basis_dictionary_grad_norms
+            ) / len(basis_dictionary_grad_norms)
+        if self.ridge_parameterization == "topk_ste":
+            metrics["grad_norm/topk_ste"] = TopKSTE.get_last_grad_norm()
+        return metrics
+
     def get_penalty(self):
         if self.penalty is None:
-            raise ValueError("Penalty is not set.")
+            return 0.0
         return self.penalty
 
     def zero_penalty(self):
@@ -632,7 +670,7 @@ class QuasiProjectiveIntervention(
     def set_intervention_boundaries(self, intervention_boundaries):
         return None
 
-    def compute_ridge(self, X, Y, importance_scores, importance_power=-2):
+    def compute_closeform_ridge(self, X, Y, importance_scores, importance_power=-2):
         # X: batch x k x d_embed
         # Y: batch x seq x d_embed
         # importance_scores: batch x k
@@ -714,10 +752,12 @@ class QuasiProjectiveIntervention(
             top_k_values, top_k_indices = TopKSTE.apply(
                 dictionary_encodings, self.top_k_parameter
             )
-        else:
+        elif self.do_topk:
             top_k_values, top_k_indices = torch.topk(
                 dictionary_encodings, self.top_k_parameter, dim=-1
             )
+        else:
+            top_k_values = dictionary_encodings
 
         # Remove indices where the value is less than zero
         # positive_mask = top_k_values > 0
@@ -725,15 +765,20 @@ class QuasiProjectiveIntervention(
         # top_k_indices = top_k_indices[positive_mask]
 
         # Select rows of the dictionary according to top_k_indices
-        selected_dictionary = self.basis_dictionary(top_k_indices)
+        if self.do_topk:
+            selected_dictionary = self.basis_dictionary(top_k_indices)
+        else:
+            selected_dictionary = self.basis_dictionary(
+                torch.arange(0, self.dict_size, device=top_k_values.device)
+            )
 
-        base_interchange, base_metrics = self.compute_ridge(
+        base_interchange, base_metrics = self.compute_closeform_ridge(
             selected_dictionary,
             base,
             top_k_values,
             importance_power=self.importance_power,
         )
-        source_interchange, source_metrics = self.compute_ridge(
+        source_interchange, source_metrics = self.compute_closeform_ridge(
             selected_dictionary,
             source,
             top_k_values,
@@ -749,7 +794,11 @@ class QuasiProjectiveIntervention(
             with torch.no_grad():
                 # Reshape top_k_values to [batch, d_embed, k]
                 reshaped_values = selected_dictionary.view(
-                    top_k_values.shape[0], -1, self.top_k_parameter
+                    top_k_values.shape[0],
+                    -1,
+                    self.top_k_parameter
+                    if self.do_topk
+                    else self.basis_dictionary.weight.shape[0],
                 ).float()
                 metrics["avg_dictionary_topk_rank"] = (
                     torch.linalg.matrix_rank(reshaped_values).float().mean().item()
@@ -788,30 +837,25 @@ class QuasiProjectiveIntervention(
                     .item()
                 )
 
-        if self.return_penalty:
+        if self.return_penalty and self.penalty != "topk_ste":
             if self.ridge_parameterization == "inv_alpha":
-                penalty = torch.sum(
+                penalty = torch.mean(
                     self.lambda_parameter
                     / (self.lambda_parameter + top_k_values**self.importance_power)
                 )
             elif self.ridge_parameterization == "sigmoid":
-                penalty = torch.sum(
+                penalty = torch.mean(
                     self.lambda_parameter
                     / (self.lambda_parameter + top_k_values.sigmoid())
                 )
             elif self.ridge_parameterization == "softmax":
-                penalty = torch.sum(
+                penalty = torch.mean(
                     self.lambda_parameter
                     / (self.lambda_parameter + top_k_values.softmax(-1))
                 )
-            else:
-                penalty = torch.full(
-                    (1,),
-                    1 / (1 + self.lambda_parameter),
-                    dtype=output.dtype,
-                    device=output.device,
-                )
-            metrics["lambda_penalty"] = penalty.item()
+            metrics["lambda_penalty"] = (
+                penalty.item() if isinstance(penalty, torch.Tensor) else penalty
+            )
             if self.penalty is not None:
                 raise ValueError("Penalty is already set.")
 

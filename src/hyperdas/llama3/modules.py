@@ -52,11 +52,14 @@ class LlamaInterpretorConfig(LlamaConfig):
     ablate_source_token_attention: bool = False
     break_asymmetric: bool = False
     # For projective ridge regression
+    return_penalty: bool = True
     top_k_parameter: int = 128
     lambda_parameter: int = 10
     importance_power: int = -2
     epsilon: float = 1e-6
     ridge_parameterization = "inv_alpha"
+    do_topk: bool = True
+    dict_size: int = None
 
 
 class LlamaModelWithCrossAttention(LlamaModel):
@@ -572,15 +575,16 @@ class LlamaInterpretor(nn.Module):
             elif subspace_module == "QuasiProjective":
                 self.das_module = QuasiProjectiveIntervention(
                     embed_dim=self.target_model.config.hidden_size,
-                    dict_size=self.target_model.config.hidden_size,
+                    dict_size=config.dict_size or self.target_model.config.hidden_size,
                     top_k_parameter=config.top_k_parameter,
                     lambda_parameter=config.lambda_parameter,
                     importance_power=config.importance_power,
                     epsilon=config.epsilon,
-                    return_penalty=True,
+                    return_penalty=config.return_penalty,
                     ridge_parameterization=config.ridge_parameterization,
                     torch_dtype=config.torch_dtype,
                     compute_metrics=compute_metrics,
+                    do_topk=config.do_topk,
                 )
             else:
                 raise ValueError("Invalid subspace module")

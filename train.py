@@ -112,9 +112,12 @@ def run_experiment(
         epsilon=config.epsilon,
         importance_power=config.importance_power,
         ridge_parameterization=config.ridge_parameterization,
+        do_topk=config.do_topk,
+        dict_size=config.dict_size,
         device=device,
         compute_metrics=config.compute_metrics,
         max_eval_steps=config.max_eval_steps,
+        return_penalty=config.return_penalty,
     )
 
     if config.load_trained_from is not None:
