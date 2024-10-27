@@ -710,10 +710,24 @@ class QuasiProjectiveIntervention(
         # Cast regularized_XTX and XTY to float32
         regularized_XTX = regularized_XTX.to(torch.float32)
         XTY = XTY.to(torch.float32)
+
         # Solve the system
-        ridge_coeffs = torch.vmap(torch.linalg.solve, in_dims=(0, 0))(
-            regularized_XTX, XTY
-        )
+        # ridge_coeffs = torch.vmap(torch.linalg.solve, in_dims=(0, 0))(
+        #     regularized_XTX, XTY
+        # )
+
+        def solve_single(A, b):
+            # Compute Cholesky decomposition
+            L = torch.linalg.cholesky(A)
+            # Solve L @ y = b for y (forward substitution)
+            # Note: solve_triangular takes (A, B) order
+            y = torch.linalg.solve_triangular(L, b, upper=False)
+            # Solve L.T @ x = y for x (back substitution)
+            x = torch.linalg.solve_triangular(L.transpose(-1, -2), y, upper=True)
+
+            return x
+
+        ridge_coeffs = torch.vmap(solve_single, in_dims=(0, 0))(regularized_XTX, XTY)
 
         # Add condition number to metrics
         if self.compute_metrics and self.training:
@@ -795,16 +809,6 @@ class QuasiProjectiveIntervention(
 
             with torch.no_grad():
                 # Reshape top_k_values to [batch, d_embed, k]
-                reshaped_values = selected_dictionary.view(
-                    top_k_values.shape[0],
-                    -1,
-                    self.top_k_parameter
-                    if self.do_topk
-                    else self.basis_dictionary.weight.shape[0],
-                ).float()
-                metrics["avg_dictionary_topk_rank"] = (
-                    torch.linalg.matrix_rank(reshaped_values).float().mean().item()
-                )
                 metrics["source_interchange_norm"] = source_interchange.norm().item()
                 metrics["base_interchange_norm"] = base_interchange.norm().item()
                 metrics["intervention_norm"] = (

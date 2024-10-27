@@ -1,6 +1,6 @@
 defaults:
   - _self_
-  - override hydra/launcher: joblib
+  - override hydra/launcher: ${oc.env:LAUNCH_MODE,parallel} # default to parallel if not specified
 
 # Common parameters
 compute_metrics: false # whether to compute metrics for das modules and log
@@ -56,7 +56,7 @@ lambda_parameter: 1
 importance_power: -2
 epsilon: 1e-6
 return_penalty: true
-# options: inv_alpha, topk_ste, sigmoid, softmax 
+# options: inv_alpha, topk_ste, sigmoid, softmax
 ridge_parameterization: null
 do_topk: true
 dict_size: null
@@ -73,17 +73,3 @@ hydra:
   sweep:
     dir: ./multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
     subdir: ${hydra.job.num}
-
-  launcher:
-    _target_: hydra_plugins.hydra_joblib_launcher.joblib_launcher.JoblibLauncher
-    n_jobs: -1  # Use all available cores
-    backend: null
-    prefer: processes
-    require: null
-    verbose: 0
-    timeout: null
-    pre_dispatch: 2*n_jobs
-    batch_size: auto
-    temp_folder: null
-    max_nbytes: null
-    mmap_mode: r

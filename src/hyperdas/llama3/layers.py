@@ -1,11 +1,10 @@
 import math
 import warnings
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.cuda.amp import autocast
 from transformers.cache_utils import Cache
 from transformers.models.llama.modeling_llama import (
     LlamaAttention,
@@ -157,7 +156,6 @@ class LlamaAttentionWithCrossAttention(LlamaAttention):
         attn_weights = torch.matmul(
             query_states, key_states.transpose(2, 3)
         ) / math.sqrt(self.head_dim)
-
         # no matter the length, we just slice it
         if attention_mask is not None:
             if not self.is_cross_attention:
@@ -505,16 +503,6 @@ class InterpretorUnembedCrossAttention(LlamaAttentionWithCrossAttention):
         base_n_tokens = base_encoder_attention_mask.shape[-1] // n_layers
         source_n_tokens = source_encoder_attention_mask.shape[-1] // n_layers
 
-        base_start, base_end = (
-            self.intervention_layer * base_n_tokens,
-            (self.intervention_layer + 1) * base_n_tokens,
-        )
-
-        source_start, source_end = (
-            self.intervention_layer * source_n_tokens,
-            (self.intervention_layer + 1) * source_n_tokens,
-        )
-
         batch_size = base_encoder_attention_mask.shape[0]
         base_encoder_attention_mask = base_encoder_attention_mask.reshape(
             batch_size, base_n_tokens, n_layers
@@ -654,11 +642,6 @@ class InterpretorUnembedCrossAttention(LlamaAttentionWithCrossAttention):
 
         if past_key_value is not None:
             raise NotImplementedError
-            # sin and cos are specific to RoPE models; cache_position needed for the static cache
-            cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
-            key_states, value_states = past_key_value.update(
-                key_states, value_states, self.layer_idx, cache_kwargs
-            )
 
         key_states = repeat_kv(key_states, self.num_key_value_groups)
 
