@@ -770,6 +770,8 @@ class QuasiProjectiveIntervention(
         else:
             selected_dictionary = self.basis_dictionary(
                 torch.arange(0, self.dict_size, device=top_k_values.device)
+                .unsqueeze(0)
+                .repeat(base.shape[0], 1)
             )
 
         base_interchange, base_metrics = self.compute_closeform_ridge(
