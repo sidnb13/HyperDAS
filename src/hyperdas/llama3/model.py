@@ -907,6 +907,8 @@ class RavelInterpretorHypernetwork(nn.Module):
                         penalty = self.interpretor.get_penalty()
                         training_loss += penalty
                         self.interpretor.zero_penalty()
+                    else:
+                        penalty = None
 
                     if target_intervention_num is not None:
                         assert isinstance(target_intervention_num, int)
@@ -949,9 +951,7 @@ class RavelInterpretorHypernetwork(nn.Module):
                             intervention_number_loss.item()
                         )
 
-                    if isinstance(
-                        self.interpretor.das_module, QuasiProjectiveIntervention
-                    ):
+                    if penalty is not None:
                         metrics["train_batch_penalty"] = (
                             penalty.item()
                             if isinstance(penalty, torch.Tensor)
@@ -966,11 +966,12 @@ class RavelInterpretorHypernetwork(nn.Module):
                             output_metrics["sparsity_weight"] = (
                                 step_sparsity_loss_weight.item()
                             )
-                            output_metrics["train_batch_penalty"] = (
-                                penalty.item()
-                                if isinstance(penalty, torch.Tensor)
-                                else penalty
-                            )
+                            if penalty is not None:
+                                output_metrics["train_batch_penalty"] = (
+                                    penalty.item()
+                                    if isinstance(penalty, torch.Tensor)
+                                    else penalty
+                                )
 
                         logger.info(output_metrics)
 
