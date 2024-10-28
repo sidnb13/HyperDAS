@@ -5,16 +5,16 @@ MODEL="meta-llama/Meta-Llama-3-8B"
 SAVE_DIR="./assets/checkpoints"
 SUBSPACE_MODULE="ReflectSelect"
 N_EPOCHS=1
-N_STEPS=500
+N_STEPS=1000
 LAMBDA_PARAMETER=1e-3
 EVAL_PER_STEPS=100
-TRAIN_BATCH_SIZE=32
+TRAIN_BATCH_SIZE=16
 DAS_DIMENSION=2,4,8,16,32,64,128
 TRAIN_PATH="experiments/RAVEL/data/ravel_country_causal_only_train"
 TEST_PATH="experiments/RAVEL/data/ravel_country_causal_only_test"
 
 WANDB_PROJECT="HyperDAS"
-WANDB_GROUP="quasi_test_simple"
+WANDB_GROUP="reflectdas_test_simple"
 WANDB_ENTITY="hyperdas"
 WANDB_NOTES="use simple causal dataset"
 
@@ -34,7 +34,6 @@ python train.py \
     train_batch_size=$TRAIN_BATCH_SIZE \
     train_path=$TRAIN_PATH \
     test_path=$TEST_PATH \
-    ridge_parameterization=softmax,inv_alpha \
     das_dimension=$DAS_DIMENSION \
     wandb_notes="$WANDB_NOTES" \
     return_penalty=false \
