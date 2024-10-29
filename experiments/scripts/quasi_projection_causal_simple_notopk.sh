@@ -11,7 +11,7 @@ EVAL_PER_STEPS=100
 TRAIN_BATCH_SIZE=32
 TRAIN_PATH="experiments/RAVEL/data/ravel_country_causal_only_train"
 TEST_PATH="experiments/RAVEL/data/ravel_country_causal_only_test"
-DICTIONARY_SIZE=8,16,32,128,256,512,1024,2048,4096
+DICTIONARY_SIZE=4096
 
 WANDB_PROJECT="HyperDAS"
 WANDB_GROUP="quasi_test_simple"

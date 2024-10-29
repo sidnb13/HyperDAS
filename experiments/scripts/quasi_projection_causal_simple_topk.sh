@@ -37,7 +37,7 @@ python train.py \
     test_path=$TEST_PATH \
     top_k_parameter=$TOP_K_PARAMETER \
     dict_size=$DICTIONARY_SIZE \
-    ridge_parameterization=inv_alpha,softmax,topk_ste \
+    ridge_parameterization=topk_ste \
     wandb_notes="$WANDB_NOTES" \
     return_penalty=true \
     do_topk=true \

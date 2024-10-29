@@ -859,11 +859,13 @@ class QuasiProjectiveIntervention(
                     self.lambda_parameter
                     / (self.lambda_parameter + top_k_values.softmax(-1))
                 )
-            metrics["lambda_penalty"] = (
-                penalty.item() if isinstance(penalty, torch.Tensor) else penalty
-            )
-            if self.penalty is not None:
-                raise ValueError("Penalty is already set.")
+            else:
+                penalty = None
+
+            if penalty is not None:
+                metrics["lambda_penalty"] = (
+                    penalty.item() if isinstance(penalty, torch.Tensor) else penalty
+                )
 
             self.penalty = penalty
 
