@@ -96,29 +96,7 @@ def run_experiment(
 
     from src.hyperdas.llama3.model import RavelInterpretorHypernetwork
 
-    hypernetwork = RavelInterpretorHypernetwork(
-        model_name_or_path=config.model_name_or_path,
-        num_editing_heads=32,
-        intervention_layer=config.intervention_layer,
-        subspace_module=config.subspace_module,
-        das_dimension=config.das_dimension,
-        chop_editor_at_layer=config.num_decoders,
-        initialize_from_scratch=config.initialize_from_scratch,
-        ablate_base_token_attention=config.ablate_base_token_attention,
-        ablate_source_token_attention=config.ablate_source_token_attention,
-        break_asymmetric=config.break_asymmetric,
-        top_k_parameter=config.top_k_parameter,
-        lambda_parameter=config.lambda_parameter,
-        epsilon=config.epsilon,
-        importance_power=config.importance_power,
-        ridge_parameterization=config.ridge_parameterization,
-        do_topk=config.do_topk,
-        dict_size=config.dict_size,
-        device=device,
-        compute_metrics=config.compute_metrics,
-        max_eval_steps=config.max_eval_steps,
-        return_penalty=config.return_penalty,
-    )
+    hypernetwork = RavelInterpretorHypernetwork(config, device)
 
     if config.load_trained_from is not None:
         hypernetwork.load_model(config.load_trained_from)
@@ -145,6 +123,7 @@ def run_experiment(
         save_model=config.save_model,
         target_intervention_num=config.target_intervention_num,
         debug_model=config.debug_model,
+        run_name=config.wandb_run_name,
     )
 
     if config.log_wandb:

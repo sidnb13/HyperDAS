@@ -60,6 +60,9 @@ class LlamaInterpretorConfig(LlamaConfig):
     ridge_parameterization = "inv_alpha"
     do_topk: bool = True
     dict_size: int = None
+    orthogonal_init: bool = False
+    # Other
+    freeze_das_module: bool = False
 
 
 class LlamaModelWithCrossAttention(LlamaModel):
@@ -585,12 +588,17 @@ class LlamaInterpretor(nn.Module):
                     torch_dtype=config.torch_dtype,
                     compute_metrics=compute_metrics,
                     do_topk=config.do_topk,
+                    orthogonal_init=config.orthogonal_init,
                 )
             else:
                 raise ValueError("Invalid subspace module")
 
         if self.use_das_intervention:
             self.das_module = self.das_module.to(device)
+
+        if self.config.freeze_das_module:
+            for param in self.das_module.parameters():
+                param.requires_grad = False
 
         # freeze target model
         for param in self.target_model.parameters():

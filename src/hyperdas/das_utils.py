@@ -580,6 +580,7 @@ class QuasiProjectiveIntervention(
             "inv_alpha", "ste", "sigmoid", "softmax"
         ] = "inv_alpha",
         do_topk=True,
+        orthogonal_init=False,
         **kwargs,
     ):
         super().__init__(**kwargs)

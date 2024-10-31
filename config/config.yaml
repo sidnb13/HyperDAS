@@ -41,6 +41,7 @@ save_model: false
 inference_modes:
   ["default", "bidding_argmax", "groundtruth", "column_argmax", "global_argmax"]
 num_decoders: 8
+num_editing_heads: 32
 initialize_from_scratch: false
 ablate_base_token_attention: false
 ablate_source_token_attention: false
@@ -60,6 +61,8 @@ return_penalty: true
 ridge_parameterization: null
 do_topk: true
 dict_size: null
+orthogonal_init: false
+freeze_das_module: false
 
 # Specific parameters for train_ablation.py
 # (Add any specific parameters here)

@@ -9,14 +9,14 @@ N_STEPS=1000
 LAMBDA_PARAMETER=1e-3
 EVAL_PER_STEPS=100
 TRAIN_BATCH_SIZE=16
-DAS_DIMENSION=2,4,8,16,32,64,128
+DAS_DIMENSION=32
 TRAIN_PATH="experiments/RAVEL/data/ravel_country_causal_only_train"
 TEST_PATH="experiments/RAVEL/data/ravel_country_causal_only_test"
 
 WANDB_PROJECT="HyperDAS"
 WANDB_GROUP="reflectdas_test_simple"
 WANDB_ENTITY="hyperdas"
-WANDB_NOTES="use simple causal dataset"
+WANDB_NOTES="to use as init for QuasiProjective"
 
 python train.py \
     --multirun \
@@ -37,4 +37,5 @@ python train.py \
     das_dimension=$DAS_DIMENSION \
     wandb_notes="$WANDB_NOTES" \
     return_penalty=false \
+    save_model=true \
     hydra.launcher.n_jobs=4

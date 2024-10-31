@@ -12,7 +12,7 @@ TRAIN_BATCH_SIZE=32
 TRAIN_PATH="experiments/RAVEL/data/ravel_country_causal_only_train"
 TEST_PATH="experiments/RAVEL/data/ravel_country_causal_only_test"
 DICTIONARY_SIZE=4096
-TOP_K_PARAMETER=3072
+TOP_K_PARAMETER=2,4,8,16,32,512,1024,2048,3072
 
 WANDB_PROJECT="HyperDAS"
 WANDB_GROUP="quasi_test_simple"
@@ -41,4 +41,5 @@ python train.py \
     wandb_notes="$WANDB_NOTES" \
     return_penalty=true \
     do_topk=true \
+    orthogonal_init=true \
     hydra.launcher.n_jobs=2

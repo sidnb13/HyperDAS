@@ -8,6 +8,7 @@ import seaborn as sns
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from omegaconf import DictConfig
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
@@ -22,80 +23,58 @@ logger = get_logger(__name__)
 
 class RavelInterpretorHypernetwork(nn.Module):
     # Separating the editor config file, from its base model's configurations
-    def __init__(
-        self,
-        model_name_or_path: str = "/home/ubuntu/llama3-8b",
-        num_editing_heads: int = 32,
-        chop_editor_at_layer: int = 8,
-        intervention_layer: int = 0,
-        subspace_module: str = "ReflectSelect",
-        torch_dtype: torch.dtype = torch.bfloat16,
-        das_dimension: Optional[int] = None,
-        initialize_from_scratch: bool = False,
-        ablate_base_token_attention: bool = False,
-        ablate_source_token_attention: bool = False,
-        break_asymmetric: bool = False,
-        return_penalty: bool = True,
-        top_k_parameter: int = 128,
-        lambda_parameter: float = 10.0,
-        importance_power: float = -2.0,
-        epsilon: float = 1e-6,
-        ridge_parameterization: str = "inv_alpha",
-        do_topk: bool = True,
-        dict_size: int = None,
-        device: str = "cuda",
-        compute_metrics: bool = False,
-        max_eval_steps: int = -1,
-    ):
+    def __init__(self, config: DictConfig, device):
         super().__init__()
 
-        self.interpretor_config = LlamaInterpretorConfig.from_pretrained(
-            model_name_or_path
+        self.interpretor_config: LlamaInterpretorConfig = (
+            LlamaInterpretorConfig.from_pretrained(config.model_name_or_path)
         )
-        self.interpretor_config.name_or_path = model_name_or_path
-        self.interpretor_config.torch_dtype = torch_dtype
-        self.interpretor_config.num_editing_heads = num_editing_heads
-        self.interpretor_config.chop_editor_at_layer = chop_editor_at_layer
-        self.interpretor_config.intervention_layer = intervention_layer
+        self.interpretor_config.name_or_path = config.model_name_or_path
+        self.interpretor_config.torch_dtype = torch.bfloat16
+        self.interpretor_config.num_editing_heads = config.num_editing_heads
+        self.interpretor_config.chop_editor_at_layer = config.num_decoders
+        self.interpretor_config.intervention_layer = config.intervention_layer
         self.interpretor_config._attn_implementation = "eager"
-        self.interpretor_config.initialize_from_scratch = initialize_from_scratch
+        self.interpretor_config.initialize_from_scratch = config.initialize_from_scratch
         self.interpretor_config.ablate_base_token_attention = (
-            ablate_base_token_attention
+            config.ablate_base_token_attention
         )
         self.interpretor_config.ablate_source_token_attention = (
-            ablate_source_token_attention
+            config.ablate_source_token_attention
         )
-        self.interpretor_config.break_asymmetric = break_asymmetric
+        self.interpretor_config.break_asymmetric = config.break_asymmetric
+
+        self.interpretor_config.freeze_das_module = config.freeze_das_module
 
         # Ridge/projective configs
-        self.interpretor_config.top_k_parameter = top_k_parameter
-        self.interpretor_config.lambda_parameter = lambda_parameter
-        self.interpretor_config.importance_power = importance_power
-        self.interpretor_config.epsilon = epsilon
-        self.interpretor_config.ridge_parameterization = ridge_parameterization
-        self.interpretor_config.return_penalty = return_penalty
-        self.interpretor_config.do_topk = do_topk
-        self.interpretor_config.dict_size = dict_size
+        self.interpretor_config.top_k_parameter = config.top_k_parameter
+        self.interpretor_config.lambda_parameter = config.lambda_parameter
+        self.interpretor_config.importance_power = config.importance_power
+        self.interpretor_config.epsilon = config.epsilon
+        self.interpretor_config.ridge_parameterization = config.ridge_parameterization
+        self.interpretor_config.return_penalty = config.return_penalty
+        self.interpretor_config.do_topk = config.do_topk
+        self.interpretor_config.dict_size = config.dict_size
+        self.interpretor_config.orthogonal_init = config.orthogonal_init
 
         self.interpretor = LlamaInterpretor(
             self.interpretor_config,
-            subspace_module=subspace_module,
-            das_dimension=das_dimension,
+            subspace_module=config.subspace_module,
+            das_dimension=config.das_dimension,
             device=device,
-            compute_metrics=compute_metrics,
+            compute_metrics=config.compute_metrics,
         )
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+        self.tokenizer = AutoTokenizer.from_pretrained(config.model_name_or_path)
 
         self.tokenizer.padding_side = "left"
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
 
-        self.use_das_intervention = subspace_module is not None
-        self.das_dim = das_dimension
+        self.use_das_intervention = config.subspace_module is not None
+        self.das_dim = config.das_dimension
         self.residual_cache = None
         self.opt = None
-        # self.training_loss = None
-        self.max_eval_steps = max_eval_steps
+        self.max_eval_steps = config.max_eval_steps
 
         # DAS Training Hyperparameters
         self.rotate_lr = 1e-3
@@ -686,6 +665,7 @@ class RavelInterpretorHypernetwork(nn.Module):
         schedule_sparsity_loss=True,
         target_intervention_num=None,
         debug_model=False,
+        run_name=None,
     ):
         if save_dir is not None and not os.path.exists(save_dir):
             os.makedirs(save_dir)
@@ -807,13 +787,16 @@ class RavelInterpretorHypernetwork(nn.Module):
                                 "Saving model to {}".format(
                                     os.path.join(
                                         save_dir,
+                                        run_name,
                                         f"model_epoch_{epoch}_step_{cur_steps}",
                                     )
                                 )
                             )
                             self.save_model(
                                 os.path.join(
-                                    save_dir, f"model_epoch_{epoch}_step_{cur_steps}"
+                                    save_dir,
+                                    run_name,
+                                    f"model_epoch_{epoch}_step_{cur_steps}",
                                 )
                             )
 
@@ -1005,12 +988,12 @@ class RavelInterpretorHypernetwork(nn.Module):
             }
 
             for k, v in accs.items():
-                print(f"{inference_mode} {k}: {v}")
+                logger.info(f"{inference_mode} {k}: {v}")
 
         # Save the final model
-        if save_dir is not None:
-            if save_model:
-                self.save_model(os.path.join(save_dir, "final_model"))
+        if save_model and save_dir:
+            self.save_model(os.path.join(save_dir, run_name, "final_model"))
             json.dump(
-                result_dict, open(os.path.join(save_dir, "final_result.json"), "w")
+                result_dict,
+                open(os.path.join(save_dir, run_name, "final_result.json"), "w"),
             )

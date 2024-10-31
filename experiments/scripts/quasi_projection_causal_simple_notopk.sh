@@ -35,7 +35,7 @@ python train.py \
     train_path=$TRAIN_PATH \
     test_path=$TEST_PATH \
     dict_size=$DICTIONARY_SIZE \
-    ridge_parameterization=inv_alpha,softmax \
+    ridge_parameterization=softmax \
     wandb_notes="$WANDB_NOTES" \
     return_penalty=true \
     do_topk=false \
