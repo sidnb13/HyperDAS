@@ -11,13 +11,15 @@ EVAL_PER_STEPS=100
 TRAIN_BATCH_SIZE=32
 TRAIN_PATH="experiments/RAVEL/data/ravel_country_causal_only_train"
 TEST_PATH="experiments/RAVEL/data/ravel_country_causal_only_test"
-DICTIONARY_SIZE=4096
-TOP_K_PARAMETER=2,4,8,16,32,512,1024,2048,3072
+DICTIONARY_SIZE=32
+TOP_K_PARAMETER=2,4,8,16,32
+FREEZE_DAS_MODULES="basis_dictionary"
 
 WANDB_PROJECT="HyperDAS"
-WANDB_GROUP="quasi_test_simple"
+WANDB_GROUP="quasi_das_init"
 WANDB_ENTITY="hyperdas"
-WANDB_NOTES=null
+WANDB_NOTES="init from das trained rotation matrix"
+LOAD_FROM="assets/checkpoints/ReflectSelect_20241029_161135/final_model"
 
 python train.py \
     --multirun \
@@ -37,9 +39,11 @@ python train.py \
     test_path=$TEST_PATH \
     top_k_parameter=$TOP_K_PARAMETER \
     dict_size=$DICTIONARY_SIZE \
-    ridge_parameterization=topk_ste \
+    ridge_parameterization=inv_alpha \
     wandb_notes="$WANDB_NOTES" \
     return_penalty=true \
     do_topk=true \
-    orthogonal_init=true \
+    orthogonal_init=false \
+    freeze_das_module=$FREEZE_DAS_MODULES \
+    load_trained_from=$LOAD_FROM \
     hydra.launcher.n_jobs=2

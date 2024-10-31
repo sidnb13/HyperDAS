@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import Dict, Literal, Tuple
+from typing import Any, Dict, Literal, Mapping, Tuple
 
 import torch
 import torch.nn as nn
@@ -622,6 +622,42 @@ class QuasiProjectiveIntervention(
         self.input_layernorm = LlamaRMSNorm(hidden_size=self.embed_dim, eps=1e-5).to(
             dtype=torch_dtype
         )
+
+    def load_state_dict(
+        self, state_dict: Mapping[str, Any], strict: bool = True, assign: bool = False
+    ):
+        """Load a state dictionary with compatibility checks.
+
+        Args:
+            state_dict: The state dictionary to load
+            strict: If True, raises error on missing keys
+            assign: If True, directly assigns tensor values instead of copying
+        """
+        # First try normal loading
+        try:
+            return super().load_state_dict(state_dict, strict=strict)
+        except Exception as e:
+            # Check if this is a ReflectDAS checkpoint
+            if "rotate_layer.parametrizations.weight.original" in state_dict:
+                # Get the rotation matrix dimensions
+                reflect_weight = state_dict[
+                    "rotate_layer.parametrizations.weight.original"
+                ]
+                reflect_dim = reflect_weight.shape[1]
+
+                assert self.basis_dictionary.weight.shape[0] == reflect_dim
+
+                # Initialize new dictionary weights (must be float32)
+                new_dict_weights = torch.empty_like(
+                    self.basis_dictionary.weight,
+                    dtype=self.basis_dictionary.weight.dtype,
+                )
+
+                # Copy over the reflection weights to first reflect_dim columns
+                new_dict_weights[:reflect_dim] = reflect_weight.T
+                self.basis_dictionary.weight.data.copy_(new_dict_weights)
+            else:
+                raise e
 
     def gradient_norms(self) -> Dict[str, float]:
         metrics = {}

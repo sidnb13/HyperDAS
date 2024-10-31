@@ -99,6 +99,7 @@ def run_experiment(
     hypernetwork = RavelInterpretorHypernetwork(config, device)
 
     if config.load_trained_from is not None:
+        logger.info(f"Loading model from {config.load_trained_from}")
         hypernetwork.load_model(config.load_trained_from)
 
     # current problem: 1728 / 30864

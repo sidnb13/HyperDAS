@@ -62,7 +62,7 @@ class LlamaInterpretorConfig(LlamaConfig):
     dict_size: int = None
     orthogonal_init: bool = False
     # Other
-    freeze_das_module: bool = False
+    freeze_das_module: List[str] = None
 
 
 class LlamaModelWithCrossAttention(LlamaModel):
@@ -597,8 +597,24 @@ class LlamaInterpretor(nn.Module):
             self.das_module = self.das_module.to(device)
 
         if self.config.freeze_das_module:
-            for param in self.das_module.parameters():
-                param.requires_grad = False
+            # If freeze_das_module is a string or bool, convert to list for consistency
+            patterns = (
+                [self.config.freeze_das_module]
+                if isinstance(self.config.freeze_das_module, str)
+                else (
+                    ["*"]
+                    if isinstance(self.config.freeze_das_module, bool)
+                    else self.config.freeze_das_module
+                )
+            )
+
+            # Iterate through named parameters and freeze those matching any pattern
+            for name, param in self.das_module.named_parameters():
+                should_freeze = any(
+                    pattern in name or pattern == "*" for pattern in patterns
+                )
+                if should_freeze:
+                    param.requires_grad = False
 
         # freeze target model
         for param in self.target_model.parameters():

@@ -98,11 +98,11 @@ class RavelInterpretorHypernetwork(nn.Module):
 
     def load_model(self, load_dir):
         self.interpretor.hypernetwork.load_state_dict(
-            torch.load(os.path.join(load_dir, "hypernetwork.pt"))
+            torch.load(os.path.join(load_dir, "hypernetwork.pt"), weights_only=True)
         )
         if self.use_das_intervention:
             self.interpretor.das_module.load_state_dict(
-                torch.load(os.path.join(load_dir, "das.pt"))
+                torch.load(os.path.join(load_dir, "das.pt"), weights_only=True)
             )
 
     def set_intervention_layer(self, intervention_layer):

@@ -14,7 +14,7 @@ intervention_layer: 15
 load_trained_from: null
 n_epochs: 5
 n_steps: -1
-model_name_or_path: "/nlp/scr/sjd24/llama3-8b"
+model_name_or_path: "meta-llama/Meta-Llama-3-8B"
 train_batch_size: 16
 test_batch_size: 64
 save_dir: null
