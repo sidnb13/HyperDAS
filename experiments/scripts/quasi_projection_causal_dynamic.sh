@@ -11,12 +11,18 @@ EVAL_PER_STEPS=100
 TRAIN_BATCH_SIZE=32
 TRAIN_PATH="experiments/RAVEL/data/ravel_country_causal_only_train"
 TEST_PATH="experiments/RAVEL/data/ravel_country_causal_only_test"
-DICTIONARY_SIZE=4096
+DICTIONARY_SIZE=32
+SCORING_DIMENSION=1,2,4,8,16,32
+FREEZE_DAS_MODULES=null
 
+LOG_WANDB=true
 WANDB_PROJECT="HyperDAS"
-WANDB_GROUP="quasi_test_simple"
+WANDB_GROUP="quasi_dynamic_selection"
 WANDB_ENTITY="hyperdas"
-WANDB_NOTES="try orthogonal init"
+WANDB_NOTES="dynamic selection method"
+# LOAD_FROM="null,assets/checkpoints/ReflectSelect_20241029_161135/final_model"
+LOAD_FROM="null"
+ORTHOGONAL_INIT=true
 
 python train.py \
     --multirun \
@@ -28,16 +34,18 @@ python train.py \
     n_steps=$N_STEPS \
     lambda_parameter=$LAMBDA_PARAMETER \
     eval_per_steps=$EVAL_PER_STEPS \
-    log_wandb=true \
+    log_wandb=$LOG_WANDB \
     wandb_group=$WANDB_GROUP \
     debug_model=true \
     train_batch_size=$TRAIN_BATCH_SIZE \
     train_path=$TRAIN_PATH \
     test_path=$TEST_PATH \
     dict_size=$DICTIONARY_SIZE \
-    ridge_parameterization=softmax \
     wandb_notes="$WANDB_NOTES" \
-    return_penalty=true \
-    orthogonal_init=true \
-    selection_mechanism=full \
+    return_penalty=false \
+    orthogonal_init=$ORTHOGONAL_INIT \
+    selection_mechanism=dynamic \
+    scoring_dimension=$SCORING_DIMENSION \
+    freeze_das_module=$FREEZE_DAS_MODULES \
+    load_trained_from=$LOAD_FROM \
     hydra.launcher.n_jobs=2

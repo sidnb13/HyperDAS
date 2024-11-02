@@ -52,14 +52,15 @@ max_grad_norm: 4.0
 debug_model: false
 
 # ridge projective parameters
-top_k_parameter: 128
 lambda_parameter: 1
 importance_power: -2
 epsilon: 1e-6
 return_penalty: true
 # options: inv_alpha, topk_ste, sigmoid, softmax
 ridge_parameterization: null
-do_topk: true
+# options: full, topk, dynamic
+selection_mechanism: full
+scoring_dimension: 1
 dict_size: null
 orthogonal_init: false
 freeze_das_module: false

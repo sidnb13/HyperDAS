@@ -40,5 +40,5 @@ python train.py \
     ridge_parameterization=topk_ste \
     wandb_notes="$WANDB_NOTES" \
     return_penalty=true \
-    do_topk=true \
+    selection_mechanism=topk \
     hydra.launcher.n_jobs=2

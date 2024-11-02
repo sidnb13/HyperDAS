@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, List, Mapping, Optional, Tuple, TypeVar, Union
+from typing import Any, List, Literal, Mapping, Optional, Tuple, TypeVar, Union
 
 import torch
 import torch.nn as nn
@@ -53,12 +53,11 @@ class LlamaInterpretorConfig(LlamaConfig):
     break_asymmetric: bool = False
     # For projective ridge regression
     return_penalty: bool = True
-    top_k_parameter: int = 128
     lambda_parameter: int = 10
     importance_power: int = -2
     epsilon: float = 1e-6
     ridge_parameterization = "inv_alpha"
-    do_topk: bool = True
+    selection_mechanism: Literal["full", "topk", "dynamic"] = "full"
     dict_size: int = None
     orthogonal_init: bool = False
     # Other
@@ -579,7 +578,7 @@ class LlamaInterpretor(nn.Module):
                 self.das_module = QuasiProjectiveIntervention(
                     embed_dim=self.target_model.config.hidden_size,
                     dict_size=config.dict_size or self.target_model.config.hidden_size,
-                    top_k_parameter=config.top_k_parameter,
+                    top_k_parameter=das_dimension,
                     lambda_parameter=config.lambda_parameter,
                     importance_power=config.importance_power,
                     epsilon=config.epsilon,
@@ -587,8 +586,8 @@ class LlamaInterpretor(nn.Module):
                     ridge_parameterization=config.ridge_parameterization,
                     torch_dtype=config.torch_dtype,
                     compute_metrics=compute_metrics,
-                    do_topk=config.do_topk,
                     orthogonal_init=config.orthogonal_init,
+                    selection_mechanism=config.selection_mechanism,
                 )
             else:
                 raise ValueError("Invalid subspace module")

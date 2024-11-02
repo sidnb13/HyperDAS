@@ -579,7 +579,8 @@ class QuasiProjectiveIntervention(
         ridge_parameterization: Literal[
             "inv_alpha", "ste", "sigmoid", "softmax"
         ] = "inv_alpha",
-        do_topk=True,
+        selection_mechanism: Literal["full", "topk", "dynamic"] = "full",
+        scoring_dimension: int = 1,
         orthogonal_init=False,
         **kwargs,
     ):
@@ -587,36 +588,52 @@ class QuasiProjectiveIntervention(
         self.embed_dim = embed_dim
         self.dict_size = dict_size
         self.top_k_parameter = top_k_parameter
+        self.scoring_dimension = scoring_dimension
+
         # note: you could technically set top_k_parameter equal to full dictionary, it'd just be more expensive computationally
         # and you might want more fall-off
         self.lambda_parameter = lambda_parameter
         self.importance_power = importance_power
         self.epsilon = epsilon
         self.ridge_parameterization = ridge_parameterization
-        self.do_topk = do_topk
+        self.selection_mechanism = selection_mechanism
+        self.return_penalty = return_penalty and selection_mechanism != "dynamic"
 
         assert ridge_parameterization in [
             "inv_alpha",
             "topk_ste",
             "sigmoid",
             "softmax",
+            None,
         ], "Invalid ridge_parameterization"
 
         self.feature_dim = embed_dim
 
         self.edit_instruction_encodings = nn.Sequential(
-            nn.Linear(in_features=embed_dim, out_features=dict_size, bias=True).to(
-                dtype=torch_dtype
-            ),
+            nn.Linear(
+                in_features=embed_dim,
+                out_features=scoring_dimension
+                if selection_mechanism == "dynamic"
+                else dict_size,
+                bias=True,
+            ).to(dtype=torch_dtype),
             nn.ReLU(),  # NOTE: can we use softplus instead of eps down below?
         )
 
-        # Create a dict_size * embed_dim embedding matrix
-        self.basis_dictionary = nn.Embedding(
-            num_embeddings=dict_size, embedding_dim=embed_dim
-        ).to(dtype=torch_dtype)
+        if selection_mechanism == "topk" or selection_mechanism == "full":
+            # Create a dict_size * embed_dim embedding matrix
+            self.dictionary = nn.Embedding(
+                num_embeddings=dict_size, embedding_dim=embed_dim
+            )
+        else:
+            self.dictionary = nn.Linear(
+                scoring_dimension, dict_size * embed_dim, bias=False
+            )
+        if orthogonal_init:
+            torch.nn.init.orthogonal_(self.dictionary.weight)
 
-        self.return_penalty = return_penalty
+        self.dictionary = self.dictionary.to(dtype=torch_dtype)
+
         self.penalty = None
 
         self.input_layernorm = LlamaRMSNorm(hidden_size=self.embed_dim, eps=1e-5).to(
@@ -645,17 +662,27 @@ class QuasiProjectiveIntervention(
                 ]
                 reflect_dim = reflect_weight.shape[1]
 
-                assert self.basis_dictionary.weight.shape[0] == reflect_dim
+                assert self.dict_size == reflect_dim
 
                 # Initialize new dictionary weights (must be float32)
                 new_dict_weights = torch.empty_like(
-                    self.basis_dictionary.weight,
-                    dtype=self.basis_dictionary.weight.dtype,
+                    self.dictionary.weight,
+                    dtype=self.dictionary.weight.dtype,
                 )
 
                 # Copy over the reflection weights to first reflect_dim columns
-                new_dict_weights[:reflect_dim] = reflect_weight.T
-                self.basis_dictionary.weight.data.copy_(new_dict_weights)
+                if self.selection_mechanism in ["full", "topk"]:
+                    new_dict_weights[:reflect_dim] = reflect_weight.T
+                elif self.selection_mechanism == "dynamic":
+                    new_dict_weights[:] = (
+                        reflect_weight.flatten()
+                        .unsqueeze(-1)
+                        .expand(-1, self.scoring_dimension)
+                    )
+                else:
+                    raise ValueError("Dictionary size and loaded weight mismatch")
+
+                self.dictionary.weight.data.copy_(new_dict_weights)
             else:
                 raise e
 
@@ -673,7 +700,7 @@ class QuasiProjectiveIntervention(
 
         # Compute mean grad norm for basis_dictionary
         basis_dictionary_grad_norms = []
-        for param in self.basis_dictionary.parameters():
+        for param in self.dictionary.parameters():
             if param.grad is not None:
                 basis_dictionary_grad_norms.append(param.grad.detach().norm().item())
         if basis_dictionary_grad_norms:
@@ -714,17 +741,28 @@ class QuasiProjectiveIntervention(
 
         metrics = {}
 
-        if self.ridge_parameterization == "inv_alpha":
-            # We add an epsilon for instability prevention
-            # denominator scores will be a component inside the matrix inversion
-            # Note that alpha < 0 implies that denominator_scores_i is low for the most important features
-            denominator_scores = torch.pow(
-                importance_scores + self.epsilon, importance_power
-            )  # batch, num_active_features
-        elif self.ridge_parameterization == "sigmoid":
-            denominator_scores = torch.sigmoid(importance_scores)
-        elif self.ridge_parameterization == "softmax":
-            denominator_scores = importance_scores.softmax(-1)
+        if (
+            self.ridge_parameterization
+            and self.ridge_parameterization != "topk_ste"
+            and self.selection_mechanism
+            in [
+                "full",
+                "topk",
+            ]
+        ):
+            if self.ridge_parameterization == "inv_alpha":
+                # We add an epsilon for instability prevention
+                # denominator scores will be a component inside the matrix inversion
+                # Note that alpha < 0 implies that denominator_scores_i is low for the most important features
+                denominator_scores = torch.pow(
+                    importance_scores + self.epsilon, importance_power
+                )  # batch, num_active_features
+            elif self.ridge_parameterization == "sigmoid":
+                denominator_scores = torch.sigmoid(importance_scores)
+            elif self.ridge_parameterization == "softmax":
+                denominator_scores = importance_scores.softmax(-1)
+        else:
+            denominator_scores = None
 
         # Compute the ridge regression solution
         XTX = torch.matmul(
@@ -732,12 +770,15 @@ class QuasiProjectiveIntervention(
         )  # XTX: (batch x num_active_features x d_embed) * (batch x d_embed x num_active_features)
         XTY = torch.matmul(X, Y.transpose(-2, -1))  # XTY: batch x d_embed x seq
         # diag_denominator_scores = torch.diag_embed(denominator_scores)  #diag_denominator_scores: batch x num_active_features x num_active_features
-        if self.ridge_parameterization == "topk_ste":
+        if (
+            self.selection_mechanism == "dynamic"
+            or self.ridge_parameterization == "topk_ste"
+        ):
             # Unmodified ridge formulation
             regularized_XTX = (
                 XTX
                 + self.lambda_parameter
-                * torch.eye(self.top_k_parameter, device=XTX.device)[None, :, :]
+                * torch.eye(XTX.shape[1], device=XTX.device)[None, :, :]
             )  # regularized_XTX:
         else:
             regularized_XTX = XTX + torch.diag_embed(
@@ -749,10 +790,6 @@ class QuasiProjectiveIntervention(
         XTY = XTY.to(torch.float32)
 
         # Solve the system
-        # ridge_coeffs = torch.vmap(torch.linalg.solve, in_dims=(0, 0))(
-        #     regularized_XTX, XTY
-        # )
-
         def solve_single(A, b):
             # Compute Cholesky decomposition
             L = torch.linalg.cholesky(A)
@@ -766,9 +803,8 @@ class QuasiProjectiveIntervention(
 
         ridge_coeffs = torch.vmap(solve_single, in_dims=(0, 0))(regularized_XTX, XTY)
 
-        # Add condition number to metrics
         if self.compute_metrics and self.training:
-            if self.ridge_parameterization != "topk_ste":
+            if denominator_scores is not None:
                 # Compute mean, min, max of the denominator score vector
                 metrics["denominator_scores_mean"] = denominator_scores.mean().item()
                 metrics["denominator_scores_min"] = denominator_scores.min().item()
@@ -795,19 +831,22 @@ class QuasiProjectiveIntervention(
         )  # normalized_hidden_state: batch x d_embed
         dictionary_encodings = self.edit_instruction_encodings(
             normalized_hidden_state
-        )  # dictionary_encodings: batch x d_embed
+        )  # dictionary_encodings: batch x (d_embed or scoring_dimension)
 
         # Perform top-k index selection
         # top_k_indices: batch x k; top_k_values: batch x k
-        if self.ridge_parameterization == "topk_ste":
-            top_k_values, top_k_indices = TopKSTE.apply(
-                dictionary_encodings, self.top_k_parameter
-            )
-        elif self.do_topk:
-            top_k_values, top_k_indices = torch.topk(
-                dictionary_encodings, self.top_k_parameter, dim=-1
-            )
-        else:
+        if self.selection_mechanism == "topk":
+            if self.ridge_parameterization == "topk_ste":
+                top_k_values, top_k_indices = TopKSTE.apply(
+                    dictionary_encodings, self.top_k_parameter
+                )
+            else:
+                top_k_values, top_k_indices = torch.topk(
+                    dictionary_encodings, self.top_k_parameter, dim=-1
+                )
+        elif (
+            self.selection_mechanism == "full" or self.selection_mechanism == "dynamic"
+        ):
             top_k_values = dictionary_encodings
 
         # Remove indices where the value is less than zero
@@ -816,13 +855,17 @@ class QuasiProjectiveIntervention(
         # top_k_indices = top_k_indices[positive_mask]
 
         # Select rows of the dictionary according to top_k_indices
-        if self.do_topk:
-            selected_dictionary = self.basis_dictionary(top_k_indices)
-        else:
-            selected_dictionary = self.basis_dictionary(
+        if self.selection_mechanism == "topk":
+            selected_dictionary = self.dictionary(top_k_indices)
+        elif self.selection_mechanism == "full":
+            selected_dictionary = self.dictionary(
                 torch.arange(0, self.dict_size, device=top_k_values.device)
                 .unsqueeze(0)
                 .repeat(base.shape[0], 1)
+            )
+        elif self.selection_mechanism == "dynamic":
+            selected_dictionary = self.dictionary(top_k_values).reshape(
+                -1, self.dict_size, self.embed_dim
             )
 
         base_interchange, base_metrics = self.compute_closeform_ridge(
@@ -845,7 +888,6 @@ class QuasiProjectiveIntervention(
             metrics.update({f"base_{k}": v for k, v in base_metrics.items()})
 
             with torch.no_grad():
-                # Reshape top_k_values to [batch, d_embed, k]
                 metrics["source_interchange_norm"] = source_interchange.norm().item()
                 metrics["base_interchange_norm"] = base_interchange.norm().item()
                 metrics["intervention_norm"] = (
@@ -854,21 +896,6 @@ class QuasiProjectiveIntervention(
                 metrics["dictionary_norm"] = top_k_values.norm().item()
                 metrics["selected_dictionary_nn_l0"] = (
                     (selected_dictionary > 0).float().sum(1).mean().item()
-                )
-
-                # Projection Quality: project onto col space of selected_dictionary
-                base_proj = torch.matmul(base, selected_dictionary.transpose(-2, -1))
-                base_proj = torch.matmul(base_proj, selected_dictionary)
-                metrics["base_projection_quality"] = (
-                    F.cosine_similarity(base, base_proj).mean().item()
-                )
-
-                source_proj = torch.matmul(
-                    source, selected_dictionary.transpose(-2, -1)
-                )
-                source_proj = torch.matmul(source_proj, selected_dictionary)
-                metrics["source_projection_quality"] = (
-                    F.cosine_similarity(source, source_proj).mean().item()
                 )
 
                 # Intervention Directional Change
@@ -880,7 +907,7 @@ class QuasiProjectiveIntervention(
                     .item()
                 )
 
-        if self.return_penalty and self.penalty != "topk_ste":
+        if self.return_penalty:
             if self.ridge_parameterization == "inv_alpha":
                 penalty = torch.mean(
                     self.lambda_parameter

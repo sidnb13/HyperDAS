@@ -47,15 +47,14 @@ class RavelInterpretorHypernetwork(nn.Module):
         self.interpretor_config.freeze_das_module = config.freeze_das_module
 
         # Ridge/projective configs
-        self.interpretor_config.top_k_parameter = config.top_k_parameter
         self.interpretor_config.lambda_parameter = config.lambda_parameter
         self.interpretor_config.importance_power = config.importance_power
         self.interpretor_config.epsilon = config.epsilon
         self.interpretor_config.ridge_parameterization = config.ridge_parameterization
         self.interpretor_config.return_penalty = config.return_penalty
-        self.interpretor_config.do_topk = config.do_topk
         self.interpretor_config.dict_size = config.dict_size
         self.interpretor_config.orthogonal_init = config.orthogonal_init
+        self.interpretor_config.selection_mechanism = config.selection_mechanism
 
         self.interpretor = LlamaInterpretor(
             self.interpretor_config,
