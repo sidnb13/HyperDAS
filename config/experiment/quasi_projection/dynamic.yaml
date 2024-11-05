@@ -9,6 +9,7 @@ defaults:
 model:
   subspace_module: "QuasiProjective"
   dict_size: 32
+  scoring_dimension: 8
   return_penalty: false
   orthogonal_init: true
   selection_mechanism: dynamic

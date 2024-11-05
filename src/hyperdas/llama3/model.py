@@ -37,51 +37,34 @@ class RavelInterpretorHypernetwork(nn.Module):
         self.interpretor_config._attn_implementation = "eager"
 
         # Model architecture config
-        self.interpretor_config.num_editing_heads = config.model.get(
-            "num_editing_heads", 32
-        )
-        self.interpretor_config.chop_editor_at_layer = config.model.get(
-            "num_decoders", None
-        )
-        self.interpretor_config.initialize_from_scratch = config.model.get(
-            "initialize_from_scratch", False
+        self.interpretor_config.num_editing_heads = config.model.num_editing_heads
+        self.interpretor_config.chop_editor_at_layer = config.model.num_decoders
+        self.interpretor_config.initialize_from_scratch = (
+            config.model.initialize_from_scratch
         )
 
         # Ablation configs
-        self.interpretor_config.ablate_base_token_attention = config.model.get(
-            "ablate_base_token_attention", False
+        self.interpretor_config.ablate_base_token_attention = (
+            config.model.ablate_base_token_attention
         )
-        self.interpretor_config.ablate_source_token_attention = config.model.get(
-            "ablate_source_token_attention", False
+        self.interpretor_config.ablate_source_token_attention = (
+            config.model.ablate_source_token_attention
         )
-        self.interpretor_config.break_asymmetric = config.model.get(
-            "break_asymmetric", False
-        )
-        self.interpretor_config.freeze_das_module = config.model.get(
-            "freeze_das_module", False
-        )
+        self.interpretor_config.break_asymmetric = config.model.break_asymmetric
+        self.interpretor_config.freeze_das_module = config.model.freeze_das_module
 
         # Ridge/projective configs
-        self.interpretor_config.lambda_parameter = config.model.get(
-            "lambda_parameter", 1e-3
+        self.interpretor_config.lambda_parameter = config.model.lambda_parameter
+        self.interpretor_config.importance_power = config.model.importance_power
+        self.interpretor_config.epsilon = config.model.epsilon
+        self.interpretor_config.ridge_parameterization = (
+            config.model.ridge_parameterization
         )
-        self.interpretor_config.importance_power = config.model.get(
-            "importance_power", 1.0
-        )
-        self.interpretor_config.epsilon = config.model.get("epsilon", 1e-6)
-        self.interpretor_config.ridge_parameterization = config.model.get(
-            "ridge_parameterization", None
-        )
-        self.interpretor_config.return_penalty = config.model.get(
-            "return_penalty", False
-        )
-        self.interpretor_config.dict_size = config.model.get("dict_size", None)
-        self.interpretor_config.orthogonal_init = config.model.get(
-            "orthogonal_init", False
-        )
-        self.interpretor_config.selection_mechanism = config.model.get(
-            "selection_mechanism", None
-        )
+        self.interpretor_config.scoring_dimension = config.model.scoring_dimension
+        self.interpretor_config.return_penalty = config.model.return_penalty
+        self.interpretor_config.dict_size = config.model.dict_size
+        self.interpretor_config.orthogonal_init = config.model.orthogonal_init
+        self.interpretor_config.selection_mechanism = config.model.selection_mechanism
 
         # Initialize model components
         self.interpretor = LlamaInterpretor(

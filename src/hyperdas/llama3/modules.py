@@ -60,6 +60,7 @@ class LlamaInterpretorConfig(LlamaConfig):
     selection_mechanism: Literal["full", "topk", "dynamic"] = "full"
     dict_size: int = None
     orthogonal_init: bool = False
+    scoring_dimension: int = 8
     # Other
     freeze_das_module: List[str] = None
 
@@ -578,6 +579,7 @@ class LlamaInterpretor(nn.Module):
                 self.das_module = QuasiProjectiveIntervention(
                     embed_dim=self.target_model.config.hidden_size,
                     dict_size=config.dict_size or self.target_model.config.hidden_size,
+                    scoring_dimension=config.scoring_dimension,
                     top_k_parameter=das_dimension,
                     lambda_parameter=config.lambda_parameter,
                     importance_power=config.importance_power,
