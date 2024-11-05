@@ -1,0 +1,15 @@
+# Base model parameters
+name_or_path: "meta-llama/Meta-Llama-3-8B"
+intervention_layer: 15
+das_dimension: 128
+num_editing_heads: 32
+num_decoders: 8
+subspace_module: null
+dict_size: null
+selection_mechanism: null
+orthogonal_init: false
+ridge_parameterization: null
+return_penalty: false
+freeze_das_module: false
+inference_modes: ["default"]
+lambda_parameter: 1e-3

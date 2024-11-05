@@ -1,79 +1,13 @@
 defaults:
   - _self_
-  - override hydra/launcher: ${oc.env:LAUNCH_MODE,parallel} # default to parallel if not specified
+  - model: llama3_8b
+  - dataset: city
+  - training: base
+  - loss: base
+  - wandb_config: base
+  - experiment: null  # This should merge at root level
+  - override hydra/launcher: ${oc.env:LAUNCH_MODE,parallel}
 
-# Common parameters
-compute_metrics: false # whether to compute metrics for das modules and log
-log_wandb: false
-wandb_project: ${oc.env:WANDB_PROJECT,"HyperDAS"}
-wandb_run_name: ${oc.env:WANDB_RUN_NAME,"${subspace_module}_${now:%Y%m%d_%H%M%S}"}
-wandb_group: ${oc.env:WANDB_GROUP,null}
-wandb_tags: ${oc.env:WANDB_TAGS,null}
-wandb_notes: ${oc.env:WANDB_NOTES,null}
-intervention_layer: 15
+# Only keep other parameters here
 load_trained_from: null
-n_epochs: 5
-n_steps: -1
-model_name_or_path: "meta-llama/Meta-Llama-3-8B"
-train_batch_size: 16
-test_batch_size: 64
-save_dir: null
-test_path: "./experiments/RAVEL/data/city_test"
-train_path: "./experiments/RAVEL/data/city_train"
-causal_loss_weight: 1.0
-das_dimension: 128
-lr: 1e-4
-eval_per_steps: 100
-checkpoint_per_steps: null
-max_eval_steps: -1
-num_workers: 4
-
-# Specific parameters for train.py
-source_suffix_visibility: false
-base_suffix_visibility: false
-source_selection_sparsity_loss: true
-sparsity_loss_warm_up_ratio: 0.25
-sparsity_loss_weight_start: 0.0
-sparsity_loss_weight_end: 1.0
 target_intervention_num: null
-iso_loss_weight: 1.0
-save_model: false
-inference_modes:
-  ["default", "bidding_argmax", "groundtruth", "column_argmax", "global_argmax"]
-num_decoders: 8
-num_editing_heads: 32
-initialize_from_scratch: false
-ablate_base_token_attention: false
-ablate_source_token_attention: false
-break_asymmetric: false
-subspace_module: "ReflectSelect"
-weight_decay: 0.01
-max_grad_norm: 4.0
-debug_model: false
-
-# ridge projective parameters
-lambda_parameter: 1
-importance_power: -2
-epsilon: 1e-6
-return_penalty: true
-# options: inv_alpha, topk_ste, sigmoid, softmax
-ridge_parameterization: null
-# options: full, topk, dynamic
-selection_mechanism: full
-scoring_dimension: 1
-dict_size: null
-orthogonal_init: false
-freeze_das_module: false
-
-# Specific parameters for train_ablation.py
-# (Add any specific parameters here)
-
-# Specific parameters for train_baseline.py
-intervention_location: "last_entity_token"
-
-hydra:
-  run:
-    dir: ./outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
-  sweep:
-    dir: ./multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
-    subdir: ${hydra.job.num}

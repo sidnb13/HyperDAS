@@ -8,7 +8,7 @@ import seaborn as sns
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
@@ -22,64 +22,96 @@ logger = get_logger(__name__)
 
 
 class RavelInterpretorHypernetwork(nn.Module):
-    # Separating the editor config file, from its base model's configurations
     def __init__(self, config: DictConfig, device):
         super().__init__()
 
+        self.config = config
         self.interpretor_config: LlamaInterpretorConfig = (
-            LlamaInterpretorConfig.from_pretrained(config.model_name_or_path)
+            LlamaInterpretorConfig.from_pretrained(config.model.name_or_path)
         )
-        self.interpretor_config.name_or_path = config.model_name_or_path
-        self.interpretor_config.torch_dtype = torch.bfloat16
-        self.interpretor_config.num_editing_heads = config.num_editing_heads
-        self.interpretor_config.chop_editor_at_layer = config.num_decoders
-        self.interpretor_config.intervention_layer = config.intervention_layer
-        self.interpretor_config._attn_implementation = "eager"
-        self.interpretor_config.initialize_from_scratch = config.initialize_from_scratch
-        self.interpretor_config.ablate_base_token_attention = (
-            config.ablate_base_token_attention
-        )
-        self.interpretor_config.ablate_source_token_attention = (
-            config.ablate_source_token_attention
-        )
-        self.interpretor_config.break_asymmetric = config.break_asymmetric
 
-        self.interpretor_config.freeze_das_module = config.freeze_das_module
+        # Basic model config
+        self.interpretor_config.name_or_path = config.model.name_or_path
+        self.interpretor_config.torch_dtype = torch.bfloat16
+        self.interpretor_config.intervention_layer = config.model.intervention_layer
+        self.interpretor_config._attn_implementation = "eager"
+
+        # Model architecture config
+        self.interpretor_config.num_editing_heads = config.model.get(
+            "num_editing_heads", 32
+        )
+        self.interpretor_config.chop_editor_at_layer = config.model.get(
+            "num_decoders", None
+        )
+        self.interpretor_config.initialize_from_scratch = config.model.get(
+            "initialize_from_scratch", False
+        )
+
+        # Ablation configs
+        self.interpretor_config.ablate_base_token_attention = config.model.get(
+            "ablate_base_token_attention", False
+        )
+        self.interpretor_config.ablate_source_token_attention = config.model.get(
+            "ablate_source_token_attention", False
+        )
+        self.interpretor_config.break_asymmetric = config.model.get(
+            "break_asymmetric", False
+        )
+        self.interpretor_config.freeze_das_module = config.model.get(
+            "freeze_das_module", False
+        )
 
         # Ridge/projective configs
-        self.interpretor_config.lambda_parameter = config.lambda_parameter
-        self.interpretor_config.importance_power = config.importance_power
-        self.interpretor_config.epsilon = config.epsilon
-        self.interpretor_config.ridge_parameterization = config.ridge_parameterization
-        self.interpretor_config.return_penalty = config.return_penalty
-        self.interpretor_config.dict_size = config.dict_size
-        self.interpretor_config.orthogonal_init = config.orthogonal_init
-        self.interpretor_config.selection_mechanism = config.selection_mechanism
+        self.interpretor_config.lambda_parameter = config.model.get(
+            "lambda_parameter", 1e-3
+        )
+        self.interpretor_config.importance_power = config.model.get(
+            "importance_power", 1.0
+        )
+        self.interpretor_config.epsilon = config.model.get("epsilon", 1e-6)
+        self.interpretor_config.ridge_parameterization = config.model.get(
+            "ridge_parameterization", None
+        )
+        self.interpretor_config.return_penalty = config.model.get(
+            "return_penalty", False
+        )
+        self.interpretor_config.dict_size = config.model.get("dict_size", None)
+        self.interpretor_config.orthogonal_init = config.model.get(
+            "orthogonal_init", False
+        )
+        self.interpretor_config.selection_mechanism = config.model.get(
+            "selection_mechanism", None
+        )
 
+        # Initialize model components
         self.interpretor = LlamaInterpretor(
             self.interpretor_config,
-            subspace_module=config.subspace_module,
-            das_dimension=config.das_dimension,
+            subspace_module=config.model.subspace_module,
+            das_dimension=config.model.das_dimension,
             device=device,
-            compute_metrics=config.compute_metrics,
+            compute_metrics=config.training.compute_metrics,
         )
-        self.tokenizer = AutoTokenizer.from_pretrained(config.model_name_or_path)
 
+        # Tokenizer setup
+        self.tokenizer = AutoTokenizer.from_pretrained(config.model.name_or_path)
         self.tokenizer.padding_side = "left"
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
 
-        self.use_das_intervention = config.subspace_module is not None
-        self.das_dim = config.das_dimension
-        self.residual_cache = None
-        self.opt = None
-        self.max_eval_steps = config.max_eval_steps
+        # DAS configs
+        self.use_das_intervention = config.model.subspace_module is not None
+        self.das_dim = config.model.das_dimension
 
         # DAS Training Hyperparameters
-        self.rotate_lr = 1e-3
-        self.boundary_lr = 1e-2
-        self.das_temperature_start = 50.0
-        self.das_temperature_end = 0.1
+        self.rotate_lr = config.training.get("rotate_lr", 1e-3)
+        self.boundary_lr = config.training.get("boundary_lr", 1e-2)
+        self.das_temperature_start = config.training.get("das_temperature_start", 50.0)
+        self.das_temperature_end = config.training.get("das_temperature_end", 0.1)
+
+        # Other configs
+        self.residual_cache = None
+        self.opt = None
+        self.max_eval_steps = config.training.max_eval_steps
 
     def save_model(self, save_dir):
         if not os.path.exists(save_dir):
@@ -94,6 +126,8 @@ class RavelInterpretorHypernetwork(nn.Module):
                 self.interpretor.das_module.state_dict(),
                 os.path.join(save_dir, "das.pt"),
             )
+
+        OmegaConf.save(self.config, os.path.join(save_dir, "config.yaml"))
 
     def load_model(self, load_dir):
         self.interpretor.hypernetwork.load_state_dict(
@@ -645,27 +679,50 @@ class RavelInterpretorHypernetwork(nn.Module):
         self,
         train_loader,
         test_loader=None,
-        inference_modes=[None],
-        epochs=1,
-        steps=-1,
-        eval_per_steps: int = None,
-        checkpoint_per_steps: int = None,
-        apply_source_selection_sparsity_loss=False,
-        sparsity_loss_weight_start=0.5,
-        sparsity_loss_weight_end=1.0,
-        sparsity_loss_warm_up_ratio=0.1,
-        causal_loss_weight=1.0,
-        iso_loss_weight=1.0,
-        lr=3e-4,
-        weight_decay=0.01,
-        max_grad_norm=4.0,
-        save_dir=None,
-        save_model=False,
-        schedule_sparsity_loss=True,
-        target_intervention_num=None,
-        debug_model=False,
-        run_name=None,
+        inference_modes=None,  # Will use config.model.inference_modes if None
+        epochs=None,  # Will use config.training.n_epochs if None
+        steps=None,  # Will use config.training.n_steps if None
+        eval_per_steps: int = None,  # Will use config.training.eval_per_steps if None
+        checkpoint_per_steps: int = None,  # Will use config.training.checkpoint_per_steps if None
+        save_dir=None,  # Will use config.training.save_dir if None
+        save_model=None,  # Will use config.training.save_model if None
+        debug_model=None,  # Will use config.training.debug_model if None
+        run_name=None,  # Will use config.wandb.run_name if None
     ):
+        # Use config values as defaults
+        inference_modes = inference_modes or self.config.model.inference_modes
+        epochs = epochs or self.config.training.n_epochs
+        steps = steps or self.config.training.n_steps
+        eval_per_steps = eval_per_steps or self.config.training.eval_per_steps
+        checkpoint_per_steps = (
+            checkpoint_per_steps or self.config.training.checkpoint_per_steps
+        )
+        save_dir = save_dir or self.config.training.save_dir
+        save_model = (
+            save_model if save_model is not None else self.config.training.save_model
+        )
+        debug_model = (
+            debug_model if debug_model is not None else self.config.training.debug_model
+        )
+        run_name = run_name or self.config.wandb.run_name
+
+        # Loss configs
+        apply_source_selection_sparsity_loss = (
+            self.config.loss.source_selection_sparsity_loss
+        )
+        sparsity_loss_weight_start = self.config.loss.sparsity.weight_start
+        sparsity_loss_weight_end = self.config.loss.sparsity.weight_end
+        sparsity_loss_warm_up_ratio = self.config.loss.sparsity.warm_up_ratio
+        schedule_sparsity_loss = self.config.loss.sparsity.get("schedule", True)
+        causal_loss_weight = self.config.loss.causal_loss_weight
+        iso_loss_weight = self.config.loss.iso_loss_weight
+        target_intervention_num = self.config.loss.get("target_intervention_num", None)
+
+        # Training configs
+        lr = self.config.training.lr
+        weight_decay = self.config.training.weight_decay
+        max_grad_norm = self.config.training.max_grad_norm
+
         if save_dir is not None and not os.path.exists(save_dir):
             os.makedirs(save_dir)
 

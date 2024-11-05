@@ -5,18 +5,19 @@ MODEL="meta-llama/Meta-Llama-3-8B"
 SAVE_DIR="./assets/checkpoints"
 SUBSPACE_MODULE="ReflectSelect"
 N_EPOCHS=1
-N_STEPS=1000
+N_STEPS=500
 LAMBDA_PARAMETER=1e-3
 EVAL_PER_STEPS=100
-TRAIN_BATCH_SIZE=16
+TRAIN_BATCH_SIZE=32
 DAS_DIMENSION=32
-TRAIN_PATH="experiments/RAVEL/data/ravel_country_causal_only_train"
-TEST_PATH="experiments/RAVEL/data/ravel_country_causal_only_test"
+
+TRAIN_PATH="experiments/RAVEL/data/city_train"
+TEST_PATH="experiments/RAVEL/data/city_test"
 
 WANDB_PROJECT="HyperDAS"
 WANDB_GROUP="reflectdas_test_simple"
 WANDB_ENTITY="hyperdas"
-WANDB_NOTES="to use as init for QuasiProjective"
+WANDB_NOTES="quasi-comparison-city-full"
 
 python train.py \
     --multirun \

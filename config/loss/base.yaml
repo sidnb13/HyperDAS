@@ -1,0 +1,10 @@
+causal_loss_weight: 1.0
+iso_loss_weight: 0.0
+source_selection_sparsity_loss: false
+target_intervention_num: null
+sparsity:
+  apply: false
+  schedule: true
+  weight_start: 0.0
+  weight_end: 1.0
+  warm_up_ratio: 0.1

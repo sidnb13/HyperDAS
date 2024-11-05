@@ -1,6 +1,7 @@
 import argparse
 import gc
 import os
+import random
 
 import hydra
 import torch
@@ -27,45 +28,43 @@ def run_experiment(
     config: DictConfig,
     device: str | torch.DeviceObjType = "cuda",
 ):
-    """if save_dir is not None:
-    save_dir = os.path.join("./models", save_dir)"""
+    # If experiment config exists, use it instead of root config
+    config = config.experiment if hasattr(config, "experiment") else config
+    logger.info(f"Config: {OmegaConf.to_yaml(config)}")
 
-    if config.debug_model:
-        config.inference_modes = ["groundtruth"]
+    if config.training.debug_model:
+        config.model.inference_modes = ["groundtruth"]
 
-    if "default" in config.inference_modes:
-        config.inference_modes.remove("default")
-        config.inference_modes.append(None)
+    if "default" in config.model.inference_modes:
+        config.model.inference_modes.remove("default")
+        config.model.inference_modes.append(None)
 
-    if config.log_wandb:
+    if config.wandb_config.log:
         wandb.init(
-            project=config.wandb_project,
-            name=config.wandb_run_name,
+            project=config.wandb_config.project,
+            name=config.wandb_config.run_name,
             config=OmegaConf.to_container(config),
-            group=config.wandb_group,
-            tags=config.wandb_tags,
-            notes=config.wandb_notes,
+            group=config.wandb_config.group,
+            tags=config.wandb_config.tags,
+            notes=config.wandb_config.notes,
         )
 
-    tokenizer = AutoTokenizer.from_pretrained(config.model_name_or_path)
+    tokenizer = AutoTokenizer.from_pretrained(config.model.name_or_path)
     tokenizer.pad_token = tokenizer.eos_token
 
     tokenizer.padding_side = "left"
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.pad_token_id = tokenizer.eos_token_id
 
-    train_set = load_from_disk(config.train_path)
-    test_set = load_from_disk(config.test_path)
-
-    # train_set = Dataset.from_list([d for d in train_set if d["attribute_type"] == "causal"])
-    # test_set = Dataset.from_list([d for d in test_set if d["attribute_type"] == "causal"])
+    train_set = load_from_disk(config.dataset.train_path)
+    test_set = load_from_disk(config.dataset.test_path)
 
     collate_fn = get_ravel_collate_fn(
         tokenizer,
-        source_suffix_visibility=config.source_suffix_visibility,
-        base_suffix_visibility=config.base_suffix_visibility,
+        source_suffix_visibility=config.dataset.source_suffix_visibility,
+        base_suffix_visibility=config.dataset.base_suffix_visibility,
         add_space_before_target=True,
-        contain_entity_position="groundtruth" in config.inference_modes,
+        contain_entity_position="groundtruth" in config.model.inference_modes,
     )
 
     # very hacky
@@ -74,11 +73,11 @@ def run_experiment(
         is_multirun = True
     except Exception:
         is_multirun = False
-    num_workers = 0 if is_multirun else config.num_workers
+    num_workers = 0 if is_multirun else config.training.num_workers
 
-    data_loader = DataLoader(
+    train_data_loader = DataLoader(
         train_set,
-        batch_size=config.train_batch_size,
+        batch_size=config.training.train_batch_size,
         collate_fn=collate_fn,
         shuffle=True,
         num_workers=num_workers,
@@ -87,7 +86,7 @@ def run_experiment(
 
     test_data_loader = DataLoader(
         test_set,
-        batch_size=config.test_batch_size,
+        batch_size=config.training.test_batch_size,
         collate_fn=collate_fn,
         shuffle=True,
         num_workers=num_workers,
@@ -98,36 +97,25 @@ def run_experiment(
 
     hypernetwork = RavelInterpretorHypernetwork(config, device)
 
-    if config.load_trained_from is not None:
-        logger.info(f"Loading model from {config.load_trained_from}")
-        hypernetwork.load_model(config.load_trained_from)
+    if config.training.load_trained_from is not None:
+        logger.info(f"Loading model from {config.training.load_trained_from}")
+        hypernetwork.load_model(config.training.load_trained_from)
 
-    # current problem: 1728 / 30864
     hypernetwork.run_train(
-        train_loader=data_loader,
+        train_loader=train_data_loader,
         test_loader=test_data_loader,
-        inference_modes=config.inference_modes,
-        epochs=config.n_epochs,
-        steps=config.n_steps,
-        checkpoint_per_steps=config.checkpoint_per_steps,
-        eval_per_steps=config.eval_per_steps,
-        save_dir=config.save_dir,
-        apply_source_selection_sparsity_loss=config.source_selection_sparsity_loss,
-        sparsity_loss_weight_start=config.sparsity_loss_weight_start,
-        sparsity_loss_weight_end=config.sparsity_loss_weight_end,
-        sparsity_loss_warm_up_ratio=config.sparsity_loss_warm_up_ratio,
-        causal_loss_weight=config.causal_loss_weight,
-        iso_loss_weight=config.iso_loss_weight,
-        weight_decay=config.weight_decay,
-        max_grad_norm=config.max_grad_norm,
-        lr=config.lr,
-        save_model=config.save_model,
-        target_intervention_num=config.target_intervention_num,
-        debug_model=config.debug_model,
-        run_name=config.wandb_run_name,
+        inference_modes=config.model.inference_modes,
+        epochs=config.training.n_epochs,
+        steps=config.training.n_steps,
+        eval_per_steps=config.training.eval_per_steps,
+        checkpoint_per_steps=config.training.checkpoint_per_steps,
+        save_dir=config.training.save_dir,
+        save_model=config.training.save_model,
+        debug_model=config.training.debug_model,
+        run_name=config.wandb_config.run_name,
     )
 
-    if config.log_wandb:
+    if config.wandb_config.log:
         wandb.finish()
 
 
@@ -138,7 +126,6 @@ def hydra_main(cfg: DictConfig):
         logger.info(f"Original working directory    : {get_original_cwd()}")
         logger.info(f"to_absolute_path('foo')       : {to_absolute_path('foo')}")
         logger.info(f"to_absolute_path('/foo')      : {to_absolute_path('/foo')}")
-        logger.info(f"Config: {OmegaConf.to_yaml(cfg)}")
 
         # Check if we're running in serial mode
         is_serial = os.environ.get("LAUNCH_MODE", "parallel") == "serial"
@@ -162,6 +149,10 @@ def hydra_main(cfg: DictConfig):
 
         if not is_serial:
             torch.cuda.set_device(device)
+
+        # Set seed
+        torch.manual_seed(cfg.training.seed)
+        random.seed(cfg.training.seed)
 
         run_experiment(cfg, device)
 

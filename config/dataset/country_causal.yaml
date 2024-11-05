@@ -1,0 +1,6 @@
+defaults:
+  - base
+  - _self_  # Ensure dataset-specific configs override base
+
+train_path: "experiments/RAVEL/data/ravel_country_causal_only_train"
+test_path: "experiments/RAVEL/data/ravel_country_causal_only_test"

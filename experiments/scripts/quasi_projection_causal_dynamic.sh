@@ -9,19 +9,21 @@ N_STEPS=500
 LAMBDA_PARAMETER=1e-3
 EVAL_PER_STEPS=100
 TRAIN_BATCH_SIZE=32
-TRAIN_PATH="experiments/RAVEL/data/ravel_country_causal_only_train"
-TEST_PATH="experiments/RAVEL/data/ravel_country_causal_only_test"
+
+TRAIN_PATH="experiments/RAVEL/data/city_train"
+TEST_PATH="experiments/RAVEL/data/city_test"
+
 DICTIONARY_SIZE=32
-SCORING_DIMENSION=1,2,4,8,16,32
+SCORING_DIMENSION=2,4,8,16,32
 FREEZE_DAS_MODULES=null
 
 LOG_WANDB=true
 WANDB_PROJECT="HyperDAS"
 WANDB_GROUP="quasi_dynamic_selection"
 WANDB_ENTITY="hyperdas"
-WANDB_NOTES="dynamic selection method"
-# LOAD_FROM="null,assets/checkpoints/ReflectSelect_20241029_161135/final_model"
-LOAD_FROM="null"
+WANDB_NOTES="quasi-comparison-city-full"
+
+LOAD_FROM=null
 ORTHOGONAL_INIT=true
 
 python train.py \
@@ -48,4 +50,5 @@ python train.py \
     scoring_dimension=$SCORING_DIMENSION \
     freeze_das_module=$FREEZE_DAS_MODULES \
     load_trained_from=$LOAD_FROM \
+    save_model=true \
     hydra.launcher.n_jobs=2
