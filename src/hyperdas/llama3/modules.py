@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from typing import Any, List, Literal, Mapping, Optional, Tuple, TypeVar, Union
+import warnings
 
 import torch
 import torch.nn as nn
@@ -703,7 +704,7 @@ class LlamaInterpretor(nn.Module):
         output_intervention_weight: bool = True,
         intervention_weight: torch.Tensor = None,
         inference_mode: str = None,
-        compute_metrics: bool = False,
+        return_basis: bool = False,
     ) -> InterpretorModelOutput:
         assert inference_mode in [
             None,
@@ -815,9 +816,8 @@ class LlamaInterpretor(nn.Module):
                     dtype=hypernet_hidden_states.dtype
                 )
             else:
-                logger.warning(
-                    "Using hypernetwork attention weights for intervention, this may hurt performance significantly."
-                    "Consider setting "
+                warnings.warn(
+                    "Using hypernetwork attention weights for intervention, this may hurt performance significantly. Consider setting inference_mode."
                 )
                 # Multiply the outputs by normalization factors
                 hypernet_hidden_states, intervention_weight = interpretor_output
@@ -904,6 +904,7 @@ class LlamaInterpretor(nn.Module):
         intervention_matrix = intervention_matrix.sum(dim=1)
 
         das_metrics = {}
+        das_aux_outputs = {}
 
         def representation_swap(module, input, output):
             nonlocal das_metrics
@@ -926,28 +927,39 @@ class LlamaInterpretor(nn.Module):
                 )
 
                 if self.das_selective_subspace:
-                    mixed_output, module_das_metrics = self.das_module(
+                    intervention_output = self.das_module(
                         base_hidden_states,
                         source_intervention_hidden_states,
                         hypernet_hidden_states,
+                        return_basis=return_basis,
                     )
                 else:
-                    mixed_output, module_das_metrics = self.das_module(
+                    intervention_output = self.das_module(
                         base_hidden_states,
                         source_intervention_hidden_states,
                         batch_size,
+                        returb_basis=return_basis,
                     )
 
+                mixed_output, module_das_metrics, basis = (
+                    intervention_output.mixed_output,
+                    intervention_output.metrics,
+                    intervention_output.basis,
+                )
+
                 # Find the module name in the state dict
+                module_name = next(
+                    (
+                        name
+                        for name, mod in self.target_model.named_modules()
+                        if mod is module
+                    ),
+                    None,
+                )
+
+                das_aux_outputs[f"{module_name}/basis"] = basis
+
                 for k, v in module_das_metrics.items():
-                    module_name = next(
-                        (
-                            name
-                            for name, mod in self.target_model.named_modules()
-                            if mod is module
-                        ),
-                        None,
-                    )
                     if module_name:
                         das_metrics[f"{module_name}/{k}"] = v
                     else:
@@ -1002,7 +1014,14 @@ class LlamaInterpretor(nn.Module):
         logits = target_result.logits
 
         # collate metrics from das module, etc. to output
-        output = InterpretorModelOutput(logits=logits)
+        output = InterpretorModelOutput(
+            logits=logits,
+            basis={
+                k: v.detach().cpu()
+                for k, v in das_aux_outputs.items()
+                if "basis" in k and v is not None
+            },
+        )
 
         metrics.update(das_metrics)
         output.metrics = metrics

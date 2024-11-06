@@ -15,7 +15,7 @@ from src.hyperdas.llama3.ablation import (
     get_ravel_dictionary_collate_fn,
 )
 
-load_dotenv()
+load_dotenv(override=True)
 
 
 def run_experiment(

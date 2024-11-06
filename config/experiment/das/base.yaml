@@ -27,5 +27,3 @@ loss:
 
 wandb_config:
   group: reflectdas_test_simple
-  notes: "quasi-comparison-city-full"
-  log: true

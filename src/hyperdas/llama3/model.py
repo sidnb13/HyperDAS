@@ -140,6 +140,7 @@ class RavelInterpretorHypernetwork(nn.Module):
         iso_loss_weight: float = 1.0,
         intervention_weight: Optional[torch.Tensor] = None,
         inference_mode: Optional[str] = None,
+        return_basis: bool = False,
     ) -> Dict[str, torch.Tensor]:
         _pred = self.interpretor(
             editor_input_ids=editor_input_ids,
@@ -155,6 +156,7 @@ class RavelInterpretorHypernetwork(nn.Module):
             output_intervention_weight=output_intervention_weight,
             intervention_weight=intervention_weight,
             inference_mode=inference_mode,
+            return_basis=return_basis,
         )
 
         if labels is not None:

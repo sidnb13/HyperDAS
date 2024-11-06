@@ -2,6 +2,7 @@ import argparse
 import gc
 import os
 import random
+from datetime import datetime
 
 import hydra
 import torch
@@ -19,7 +20,7 @@ from src.hyperdas.data_utils import (
     get_ravel_collate_fn,
 )
 
-load_dotenv()
+load_dotenv(override=True)
 
 logger = get_logger(__name__)
 
@@ -39,9 +40,15 @@ def run_experiment(
         config.model.inference_modes.remove("default")
         config.model.inference_modes.append(None)
 
+    config.wandb_config.run_name = (
+        config.wandb_config.run_name
+        or f"{config.model.subspace_module}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    )
+
     if config.wandb_config.log:
         wandb.init(
             project=config.wandb_config.project,
+            entity=config.wandb_config.entity,
             name=config.wandb_config.run_name,
             config=OmegaConf.to_container(config),
             group=config.wandb_config.group,

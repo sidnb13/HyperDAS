@@ -1,10 +1,12 @@
 from abc import abstractmethod
-from typing import Any, Dict, Literal, Mapping, Tuple
+from typing import Any, Dict, Literal, Mapping
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from transformers.models.llama.modeling_llama import LlamaRMSNorm
+
+from src.hyperdas.utils import InterventionModuleOutput
 
 
 class HiddenStatesProjectionMLP(nn.Module):
@@ -96,7 +98,9 @@ class Intervention(nn.Module):
             self.interchange_dim = interchange_dim
 
     @abstractmethod
-    def forward(self, base, source, subspaces=None) -> Tuple[torch.Tensor, Dict]:
+    def forward(
+        self, base, source, subspaces=None, return_basis=False
+    ) -> InterventionModuleOutput:
         pass
 
     def gradient_norms(self) -> Dict[str, float]:
@@ -237,7 +241,9 @@ class BoundlessRotatedSpaceIntervention(
             torch.tensor([intervention_boundaries]), requires_grad=True
         )
 
-    def forward(self, base, source, batch_size):
+    def forward(
+        self, base, source, batch_size, return_basis=False
+    ) -> InterventionModuleOutput:
         metrics = {}
         # batch_size = base.shape[0]
         rotated_base = self.rotate_layer(base)
@@ -266,7 +272,15 @@ class BoundlessRotatedSpaceIntervention(
         ) * rotated_base + boundary_mask * rotated_source
         # inverse output
         output = torch.matmul(rotated_output, self.rotate_layer.weight.T)
-        return output.to(base.dtype), metrics
+
+        out = InterventionModuleOutput(
+            mixed_output=output.to(base.dtype), metrics=metrics
+        )
+
+        if return_basis:
+            out.basis = rotated_base.to(base.dtype)
+
+        return out
 
     def __str__(self):
         return f"BoundlessRotatedSpaceIntervention(embed_dim={self.embed_dim}, low_rank_dimension={self.low_rank_dimension}, temperature={self.temperature:.2f}, intervention_boundaries={self.intervention_boundaries.item():.2f})"
@@ -306,7 +320,7 @@ class RotatedSpaceIntervention(
             torch.tensor([intervention_boundaries]), requires_grad=False
         )
 
-    def forward(self, base, source, batch_size):
+    def forward(self, base, source, batch_size, return_basis=False):
         metrics = {}
         # batch_size = base.shape[0]
         rotated_base = self.rotate_layer(base)
@@ -326,7 +340,16 @@ class RotatedSpaceIntervention(
         ) * rotated_base + boundary_mask * rotated_source
         # inverse output
         output = torch.matmul(rotated_output, self.rotate_layer.weight.T)
-        return output.to(base.dtype), metrics
+
+        out = InterventionModuleOutput(
+            mixed_output=output.to(base.dtype),
+            metrics=metrics,
+        )
+
+        if return_basis:
+            out.basis = rotated_base.to(base.dtype)
+
+        return out
 
     def __str__(self):
         return f"RotatedSpaceIntervention(embed_dim={self.embed_dim}, intervention_dim={self.intervention_dim})"
@@ -361,7 +384,7 @@ class LowRankRotatedSpaceIntervention(
     def set_intervention_boundaries(self, intervention_boundaries):
         pass
 
-    def forward(self, base, source, batch_size=None):
+    def forward(self, base, source, batch_size=None, return_basis=False):
         metrics = {}
         rotated_base = self.rotate_layer(base)
         rotated_source = self.rotate_layer(source)
@@ -382,7 +405,11 @@ class LowRankRotatedSpaceIntervention(
                     .item()
                 )
 
-        return output.to(base.dtype), metrics
+        return InterventionModuleOutput(
+            mixed_output=output.to(base.dtype),
+            metrics=metrics,
+            basis=self.rotate_layer.weight if return_basis else None,
+        )
 
     def __str__(self):
         return f"LowRankRotatedSpaceIntervention(embed_dim={self.embed_dim}, low_rank_dimension={self.rotate_layer.low_rank_dimension}, sparsity={self.sparsity:.4f})"
@@ -433,7 +460,7 @@ class SelectiveLowRankRotatedSpaceIntervention(
     def set_intervention_boundaries(self, intervention_boundaries):
         return None
 
-    def forward(self, base, source, hidden_states):
+    def forward(self, base, source, hidden_states, return_basis=False):
         metrics = {}
         normalized_hidden_state = self.input_layernorm(hidden_states[:, -1, :])
         mask = self.mask_projection(normalized_hidden_state)
@@ -446,7 +473,12 @@ class SelectiveLowRankRotatedSpaceIntervention(
         output = base + torch.matmul(
             mask * (rotated_source - rotated_base), self.rotate_layer.weight.T
         )
-        return output.to(base.dtype), metrics
+        out = InterventionModuleOutput(
+            mixed_output=output.to(base.dtype), metrics=metrics
+        )
+        if return_basis:
+            out.basis = rotated_base.to(base.dtype)
+        return out
 
     def __str__(self):
         return f"SelectiveLowRankRotatedSpaceIntervention(embed_dim={self.embed_dim}, low_rank_dimension={self.rotate_layer.low_rank_dimension}, sparsity={self.sparsity:.4f}, temperature={self.temperature.item():.2f})"
@@ -500,7 +532,7 @@ class ReflectiveLowRankRotatedSpaceIntervention(
     def set_intervention_boundaries(self, intervention_boundaries):
         return None
 
-    def forward(self, base, source, hidden_states):
+    def forward(self, base, source, hidden_states, return_basis=False):
         metrics = {}
         normalized_hidden_state = self.input_layernorm(hidden_states[:, -1, :])
         rv = self.rv_proj(normalized_hidden_state)
@@ -521,7 +553,12 @@ class ReflectiveLowRankRotatedSpaceIntervention(
         output = base + torch.matmul(
             (rotated_source - rotated_base), torch.transpose(reflected_weight, 1, 2)
         )
-        return output.to(base.dtype), metrics
+        out = InterventionModuleOutput(
+            mixed_output=output.to(base.dtype), metrics=metrics
+        )
+        if return_basis:
+            out.basis = rotated_base.to(base.dtype)
+        return out
 
     def __str__(self):
         return f"ReflectiveLowRankRotatedSpaceIntervention(embed_dim={self.embed_dim}, low_rank_dimension={self.low_rank_dimension}, sparsity={self.sparsity:.4f})"
@@ -821,7 +858,7 @@ class QuasiProjectiveIntervention(
 
         return predictions, metrics
 
-    def forward(self, base, source, hidden_states):
+    def forward(self, base, source, hidden_states, return_basis=False):
         metrics = {}
         # Base:     batch x seq x d_embed
         # Source:   batch x seq x d_embed
@@ -936,7 +973,12 @@ class QuasiProjectiveIntervention(
         # penalty is sensitive to lambda_parameter, and it controls how much the solutions are influenced by each dimension
         # ...in one of the limits, as you tune up lambda_parameter really big or small, you should get negligible interchange
         # (check this! as a sanity-check!)
-        return output.to(base.dtype), metrics
+        out = InterventionModuleOutput(
+            mixed_output=output.to(base.dtype), metrics=metrics
+        )
+        if return_basis:
+            out.basis = selected_dictionary.to(base.dtype)
+        return out
 
     def __str__(self):
         return f"QuasiProjectedIntervention(top_k={self.top_k_parameter}, importance_power={self.importance_power}, lambda_parameter={self.lambda_parameter}, return_penalty={self.return_penalty})"

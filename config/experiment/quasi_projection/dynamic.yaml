@@ -23,4 +23,4 @@ training:
   debug_model: true
 
 wandb_config:
-  group: quas
+  group: quasi_dynamic_selection

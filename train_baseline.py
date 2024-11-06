@@ -19,7 +19,7 @@ from src.mdas.llama3.model import RavelMDASNetwork
 
 logger = get_logger(__name__)
 
-load_dotenv()
+load_dotenv(override=True)
 
 
 def run_experiment(

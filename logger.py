@@ -5,7 +5,7 @@ import torch
 import torch.distributed as dist
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 
 class DistributedAwareLogger(logging.Logger):

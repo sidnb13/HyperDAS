@@ -9,6 +9,7 @@ matplotlib
 seaborn
 numpy
 pandas
+scikit-learn
 pyyaml
 python-dotenv
 accelerate
