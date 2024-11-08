@@ -1,19 +1,18 @@
 defaults:
-  - /model: llama3_8b
-  - /dataset: country
-  - /training: base
-  - /loss: base
-  - /wandb_config: base
+  - /model/llama3_8b
+  - /dataset/country
+  - /training/base
+  - /loss/base
+  - /wandb_config/base
   - _self_
 
+# Move all configurations under their respective groups
 model:
-  subspace_module: "QuasiProjective"
-  dict_size: 32
-  scoring_dimension: 8
-  return_penalty: false
-  orthogonal_init: true
-  selection_mechanism: dynamic
-  lambda_parameter: 1e-3
+  subspace_module: "ReflectSelect"
+  das_dimension: 128
+  num_editing_heads: 32
+  num_decoders: 8
+  intervention_layer: 15
   inference_modes: [null]
 
 training:
@@ -36,4 +35,4 @@ loss:
     warm_up_ratio: 0.3
 
 wandb_config:
-  group: ridge_dynamic_country_baseline
+  group: reflectdas_country_baseline

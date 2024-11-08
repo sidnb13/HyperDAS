@@ -1,4 +1,3 @@
-import argparse
 import gc
 import os
 import random
@@ -127,7 +126,7 @@ def run_experiment(
 
 
 @hydra.main(version_base=None, config_path="config", config_name="config")
-def hydra_main(cfg: DictConfig):
+def main(cfg: DictConfig):
     try:
         logger.info(f"Working directory : {os.getcwd()}")
         logger.info(f"Original working directory    : {get_original_cwd()}")
@@ -170,92 +169,5 @@ def hydra_main(cfg: DictConfig):
         raise
 
 
-def argparse_main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--log_wandb", type=bool, default=False)
-    parser.add_argument("--wandb_project", type=str, default="HyperDAS")
-    parser.add_argument("--wandb_run_name", type=str, default=None)
-    parser.add_argument("--intervention_layer", type=int, default=15)
-
-    parser.add_argument("--load_trained_from", type=str, default=None)
-
-    parser.add_argument("--n_epochs", type=int, default=2)
-    parser.add_argument("--n_steps", type=int, default=-1)
-    parser.add_argument(
-        "--model_name_or_path", type=str, default="/scr-ssd/sjd24/llama3-8b"
-    )
-    parser.add_argument("--batch_size", type=int, default=16)
-    parser.add_argument(
-        "--source_suffix_visibility", default=False, action="store_true"
-    )
-    parser.add_argument("--base_suffix_visibility", default=False, action="store_true")
-
-    parser.add_argument(
-        "--test_path", type=str, default="./experiments/RAVEL/data/city_test_small"
-    )
-    parser.add_argument(
-        "--train_path", type=str, default="./experiments/RAVEL/data/city_train"
-    )
-
-    parser.add_argument("--source_selection_sparsity_loss", type=bool, default=True)
-    parser.add_argument("--sparsity_loss_warm_up_ratio", type=float, default=0.25)
-    parser.add_argument("--sparsity_loss_weight_start", type=float, default=0.0)
-    parser.add_argument("--sparsity_loss_weight_end", type=float, default=1.0)
-
-    parser.add_argument("--target_intervention_num", type=int, default=None)
-    parser.add_argument("--causal_loss_weight", type=float, default=1)
-    parser.add_argument("--iso_loss_weight", type=float, default=1)
-
-    parser.add_argument(
-        "--save_dir", type=str, default="/scr-ssd/sjd24/city_entropy_1014"
-    )
-    parser.add_argument("--save_model", default=False, action="store_true")
-
-    parser.add_argument(
-        "--inference_modes", nargs="+", default=["default", "bidding_argmax"]
-    )
-
-    # Ablation
-    parser.add_argument("--num_decoders", type=int, default=8)
-    parser.add_argument("--initialize_from_scratch", default=False, action="store_true")
-    parser.add_argument(
-        "--ablate_base_token_attention", default=False, action="store_true"
-    )
-    parser.add_argument(
-        "--ablate_source_token_attention", default=False, action="store_true"
-    )
-    parser.add_argument("--break_asymmetric", default=False, action="store_true")
-
-    # if None, use Boundless DAS
-    parser.add_argument(
-        "--subspace_module",
-        default="ReflectSelect",
-        choices=[
-            None,
-            "DAS",
-            "BoundlessDAS",
-            "MaskSelect",
-            "ReflectSelect",
-            "QuasiProjective",
-        ],
-    )
-    parser.add_argument("--das_dimension", type=int, default=128)
-    parser.add_argument("--lr", type=float, default=2e-5)
-    parser.add_argument("--weight_decay", type=float, default=0.01)
-    parser.add_argument("--eval_per_steps", type=int, default=2000)
-    parser.add_argument("--checkpoint_per_steps", type=int, default=2000)
-
-    args = parser.parse_args()
-    args = dict(args.__dict__)
-    run_experiment(OmegaConf.create(args))
-
-
 if __name__ == "__main__":
-    use_hydra = os.environ.get("USE_HYDRA", "true").lower() == "true"
-
-    if use_hydra:
-        # Use Hydra
-        hydra_main()
-    else:
-        # Use argparse
-        argparse_main()
+    main()

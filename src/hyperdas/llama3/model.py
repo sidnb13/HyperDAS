@@ -2,6 +2,7 @@ import json
 import os
 from math import ceil
 from typing import Dict, Optional
+import warnings
 
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -852,7 +853,7 @@ class RavelInterpretorHypernetwork(nn.Module):
                         if all(
                             inference_mode is None for inference_mode in inference_modes
                         ):
-                            logger.warning(
+                            warnings.warn(
                                 "Inference modes are none -> will use hypernetwork attention weights for intervention"
                             )
                         logger.debug(
