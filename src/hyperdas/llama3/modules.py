@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from typing import Any, List, Literal, Mapping, Optional, Tuple, TypeVar, Union
 import warnings
 
@@ -275,12 +274,12 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
 
     def _initialize_from_scratch(self):
         # Define a path for the cached model
-        cache_dir = os.environ.get("MODEL_CACHE_DIR", "./assets/models")
-        os.makedirs(cache_dir, exist_ok=True)
-        self.cache_path = os.path.join(
-            cache_dir,
-            f"llama_interpretor_hypernetwork_{self.config.name_or_path.replace('/', '_')}.pt",
-        )
+        # cache_dir = os.environ.get("MODEL_CACHE_DIR", "./assets/models")
+        # os.makedirs(cache_dir, exist_ok=True)
+        # self.cache_path = os.path.join(
+        #     cache_dir,
+        #     f"llama_interpretor_hypernetwork_{self.config.name_or_path.replace('/', '_')}.pt",
+        # )
 
         logger.debug("Loading pretrained model for LlamaModelWithCrossAttention")
         self.model = LlamaModelWithCrossAttention.from_pretrained(
@@ -294,19 +293,19 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
         self.model_parallel = False
         self.device_map = None
 
-        if not os.path.exists(self.cache_path):
-            # Initialize weights and apply final processing
-            logger.debug("Initializing LlamaInterpretorHypernetwork weights...")
-            self.post_init()
-            # Save the initialized model to cache
-            logger.debug(f"Saving initialized model to {self.cache_path}")
-            torch.save(self.state_dict(), self.cache_path)
-        else:
-            logger.debug("Loading cached LlamaInterpretorHypernetwork...")
-            state_dict = torch.load(
-                self.cache_path, weights_only=True, map_location=self.device
-            )
-            self.load_state_dict(state_dict, assign=True)
+        # if not os.path.exists(self.cache_path):
+        #     # Initialize weights and apply final processing
+        #     logger.debug("Initializing LlamaInterpretorHypernetwork weights...")
+        #     self.post_init()
+        #     # Save the initialized model to cache
+        #     logger.debug(f"Saving initialized model to {self.cache_path}")
+        #     torch.save(self.state_dict(), self.cache_path)
+        # else:
+        #     logger.debug("Loading cached LlamaInterpretorHypernetwork...")
+        #     state_dict = torch.load(
+        #         self.cache_path, weights_only=True, map_location=self.device
+        #     )
+        #     self.load_state_dict(state_dict, assign=True)
 
         # prune layers and add cross attn heads
         self.model.layers = self.model.layers[: self.config.chop_editor_at_layer]

@@ -12,7 +12,7 @@ save_dir: "assets/checkpoints"
 compute_metrics: true
 debug_model: false
 save_model: false
-max_grad_norm: 1.0
+max_grad_norm: 4.0
 weight_decay: 0.01
 rotate_lr: 1e-3
 boundary_lr: 1e-2

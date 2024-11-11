@@ -856,9 +856,6 @@ class RavelInterpretorHypernetwork(nn.Module):
                             warnings.warn(
                                 "Inference modes are none -> will use hypernetwork attention weights for intervention"
                             )
-                        logger.debug(
-                            f"Using inference modes in train: {inference_modes[0]}"
-                        )
                         prediction = self.forward(
                             editor_input_ids=batch["editor_input_ids"],
                             base_input_ids=batch["base_input_ids"],

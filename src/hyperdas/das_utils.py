@@ -616,7 +616,7 @@ class QuasiProjectiveIntervention(
         ridge_parameterization: Literal[
             "inv_alpha", "ste", "sigmoid", "softmax"
         ] = "inv_alpha",
-        selection_mechanism: Literal["full", "topk", "dynamic"] = "full",
+        selection_mechanism: Literal["full", "topk", "dynamic", "dynamic_eff"] = "full",
         scoring_dimension: int = 1,
         orthogonal_init=False,
         **kwargs,
@@ -650,7 +650,7 @@ class QuasiProjectiveIntervention(
             nn.Linear(
                 in_features=embed_dim,
                 out_features=scoring_dimension
-                if selection_mechanism == "dynamic"
+                if "dynamic" in selection_mechanism
                 else dict_size,
                 bias=True,
             ).to(dtype=torch_dtype),
@@ -662,12 +662,12 @@ class QuasiProjectiveIntervention(
             self.dictionary = nn.Embedding(
                 num_embeddings=dict_size, embedding_dim=embed_dim
             )
-        else:
+        elif selection_mechanism == "dynamic":
             self.dictionary = nn.Linear(
                 scoring_dimension, dict_size * embed_dim, bias=False
             )
-        if orthogonal_init:
-            torch.nn.init.orthogonal_(self.dictionary.weight)
+            if orthogonal_init:
+                torch.nn.init.orthogonal_(self.dictionary.weight)
 
         self.dictionary = self.dictionary.to(dtype=torch_dtype)
 
@@ -808,7 +808,7 @@ class QuasiProjectiveIntervention(
         XTY = torch.matmul(X, Y.transpose(-2, -1))  # XTY: batch x d_embed x seq
         # diag_denominator_scores = torch.diag_embed(denominator_scores)  #diag_denominator_scores: batch x num_active_features x num_active_features
         if (
-            self.selection_mechanism == "dynamic"
+            "dynamic" in self.selection_mechanism
             or self.ridge_parameterization == "topk_ste"
         ):
             # Unmodified ridge formulation
@@ -882,7 +882,7 @@ class QuasiProjectiveIntervention(
                     dictionary_encodings, self.top_k_parameter, dim=-1
                 )
         elif (
-            self.selection_mechanism == "full" or self.selection_mechanism == "dynamic"
+            self.selection_mechanism == "full" or "dynamic" in self.selection_mechanism
         ):
             top_k_values = dictionary_encodings
 
