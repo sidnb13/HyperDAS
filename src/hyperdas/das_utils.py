@@ -589,6 +589,41 @@ class TopKSTE(torch.autograd.Function):
         return getattr(TopKSTE, "last_grad_norm", None)
 
 
+class ChunkedHypernetwork(nn.Module):
+    def __init__(
+        self,
+        input_dim,
+        num_chunks,
+        intermediate_dim,
+        output_dim,
+        num_heads=4,
+        orthogonal_init=False,
+    ):
+        super().__init__()
+        self.intermediate_dim = intermediate_dim
+        self.output_dim = output_dim
+        self.proj = nn.ModuleList(
+            [
+                nn.Linear(
+                    input_dim, intermediate_dim * output_dim // num_chunks, bias=True
+                )
+                for _ in range(num_chunks)
+            ]
+        )
+        self.gate = nn.Linear(input_dim, num_chunks)
+
+        if orthogonal_init:
+            for proj in self.proj:
+                torch.nn.init.orthogonal_(proj.weight)
+
+    def forward(self, x):
+        projections = [proj(x) for proj in self.proj]
+        # shape (batch_size, num_chunks, output_dim * intermediate_dim // num_chunks)
+        out = torch.stack(projections, dim=1)
+        out = out * F.sigmoid(self.gate(x)).unsqueeze(-1)
+        return out
+
+
 class QuasiProjectiveIntervention(
     TrainableIntervention, DistributedRepresentationIntervention
 ):
@@ -616,7 +651,9 @@ class QuasiProjectiveIntervention(
         ridge_parameterization: Literal[
             "inv_alpha", "ste", "sigmoid", "softmax"
         ] = "inv_alpha",
-        selection_mechanism: Literal["full", "topk", "dynamic", "dynamic_eff"] = "full",
+        selection_mechanism: Literal[
+            "full", "topk", "dynamic", "dynamic_attn"
+        ] = "full",
         scoring_dimension: int = 1,
         orthogonal_init=False,
         **kwargs,
@@ -661,6 +698,14 @@ class QuasiProjectiveIntervention(
             # Create a dict_size * embed_dim embedding matrix
             self.dictionary = nn.Embedding(
                 num_embeddings=dict_size, embedding_dim=embed_dim
+            )
+        elif selection_mechanism == "dynamic_attn":
+            self.dictionary = ChunkedHypernetwork(
+                scoring_dimension,
+                dict_size,
+                dict_size,
+                embed_dim,
+                orthogonal_init=orthogonal_init,
             )
         elif selection_mechanism == "dynamic":
             self.dictionary = nn.Linear(
@@ -900,7 +945,7 @@ class QuasiProjectiveIntervention(
                 .unsqueeze(0)
                 .repeat(base.shape[0], 1)
             )
-        elif self.selection_mechanism == "dynamic":
+        elif "dynamic" in self.selection_mechanism:
             selected_dictionary = self.dictionary(top_k_values).reshape(
                 -1, self.dict_size, self.embed_dim
             )
@@ -931,8 +976,13 @@ class QuasiProjectiveIntervention(
                     (source_interchange - base_interchange).norm().item()
                 )
                 metrics["dictionary_norm"] = top_k_values.norm().item()
-                metrics["selected_dictionary_nn_l0"] = (
-                    (selected_dictionary > 0).float().sum(1).mean().item()
+
+                # Plot rank of generated basis
+                metrics["basis_rank"] = (
+                    torch.linalg.matrix_rank(selected_dictionary.float())
+                    .float()
+                    .mean()
+                    .item()
                 )
 
                 # Intervention Directional Change
