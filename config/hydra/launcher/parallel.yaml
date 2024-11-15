@@ -1,5 +1,5 @@
 _target_: hydra_plugins.hydra_joblib_launcher.joblib_launcher.JoblibLauncher
-n_jobs: ${oc.decode:${oc.env:CUDA_VISIBLE_DEVICES,1},len}  # Default to 1 if not set
+n_jobs: 2
 backend: null
 prefer: processes
 require: null

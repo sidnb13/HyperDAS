@@ -935,7 +935,7 @@ class LlamaInterpretor(nn.Module):
                         base_hidden_states,
                         source_intervention_hidden_states,
                         batch_size,
-                        returb_basis=return_basis,
+                        return_basis=return_basis,
                     )
 
                 mixed_output, module_das_metrics, basis = (

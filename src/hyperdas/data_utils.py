@@ -90,6 +90,7 @@ def get_ravel_collate_fn(
             padding=True,
             max_length=50,
             truncation=True,
+            add_special_tokens=False,
         )
         tokenized_counterfactual = tokenizer(
             counterfactual_texts,
@@ -97,14 +98,19 @@ def get_ravel_collate_fn(
             padding=True,
             max_length=50,
             truncation=True,
+            add_special_tokens=False,
         )
+
         tokenized_labels = []
 
         for i, input_ids in enumerate(tokenized["input_ids"]):
             input_prompt = tokenizer.bos_token + prefixes[i] + suffixes[i]
-            prompt_length = tokenizer(input_prompt, return_tensors="pt", padding=False)[
-                "input_ids"
-            ].shape[-1]
+            prompt_length = tokenizer(
+                input_prompt,
+                return_tensors="pt",
+                padding=False,
+                add_special_tokens=False,
+            )["input_ids"].shape[-1]
             if tokenizer.padding_side == "left":
                 prompt_length += torch.sum(input_ids == tokenizer.pad_token_id)
 
@@ -142,13 +148,19 @@ def get_ravel_collate_fn(
 
             if not source_suffix_visibility:
                 source_suffix_length = tokenizer(
-                    counterfactual_suffixes[i], return_tensors="pt", padding=False
+                    counterfactual_suffixes[i],
+                    return_tensors="pt",
+                    padding=False,
+                    add_special_tokens=False,
                 )["input_ids"].shape[-1]
                 source_visibility_mask[-source_suffix_length:] = 0
 
             if not base_suffix_visibility:
                 base_suffix_length = tokenizer(
-                    suffixes[i], return_tensors="pt", padding=False
+                    suffixes[i],
+                    return_tensors="pt",
+                    padding=False,
+                    add_special_tokens=False,
                 )["input_ids"].shape[-1]
                 base_visibility_mask[prompt_length - base_suffix_length :] = 0
 
@@ -217,8 +229,12 @@ def get_ravel_collate_fn(
 
         # NOTE: truncate=true was here before (sidnb13 removed)
         editor_input_ids = tokenizer(
-            edit_instructions, return_tensors="pt", padding=True
+            edit_instructions,
+            return_tensors="pt",
+            padding=True,
+            add_special_tokens=False,
         )["input_ids"]
+
         is_causal = torch.tensor([b["attribute_type"] == "causal" for b in batch])
         returned_dict = {
             "editor_input_ids": editor_input_ids,
@@ -308,6 +324,7 @@ def generate_ravel_dataset(
     template_split="train",
     entity_split="train",
     use_wikipedia_template=True,
+    edit_instruction_template="{base_entity} ; {source_entity} - {random_target_attribute}",
 ):
     def split_into_prefix_suffix(text, entity):
         splits = text.split(entity)
@@ -448,7 +465,12 @@ def generate_ravel_dataset(
                 "input_suffix": input_suffix,
                 "counterfactual_input_prefix": counterfactual_input_prefix,
                 "counterfactual_input_suffix": counterfactual_input_suffix,
-                "edit_instruction": f"{base_entity} ; {source_entity} - {target_attribute}",
+                # "edit_instruction": f"{base_entity} ; {source_entity} - {target_attribute}",
+                "edit_instruction": edit_instruction_template.format(
+                    base_entity=base_entity,
+                    source_entity=source_entity,
+                    random_target_attribute=random.choice(target_attributes),
+                ),
                 "entity": base_entity,
                 "counterfactual_entity": source_entity,
                 "target": entity_dict[base_entity][target_attribute],

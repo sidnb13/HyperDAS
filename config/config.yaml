@@ -6,7 +6,7 @@ defaults:
   - loss: base
   - wandb_config: base
   - experiment: null  # This should merge at root level
-  - override hydra/launcher: ${oc.env:LAUNCH_MODE,parallel}
+  - override hydra/launcher: parallel
 
 # Only keep other parameters here
 load_trained_from: null

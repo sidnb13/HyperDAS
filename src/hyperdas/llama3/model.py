@@ -111,8 +111,6 @@ class RavelInterpretorHypernetwork(nn.Module):
                 os.path.join(save_dir, "das.pt"),
             )
 
-        OmegaConf.save(self.config, os.path.join(save_dir, "config.yaml"))
-
     def load_model(self, load_dir):
         self.interpretor.hypernetwork.load_state_dict(
             torch.load(os.path.join(load_dir, "hypernetwork.pt"), weights_only=True)
@@ -711,6 +709,7 @@ class RavelInterpretorHypernetwork(nn.Module):
 
         if save_dir is not None and not os.path.exists(save_dir):
             os.makedirs(save_dir)
+            OmegaConf.save(self.config, os.path.join(save_dir, "config.yaml"))
 
         trainable_parameters = []
         for name, param in self.named_parameters():
@@ -1032,6 +1031,7 @@ class RavelInterpretorHypernetwork(nn.Module):
         # Save the final model
         if save_model and save_dir:
             self.save_model(os.path.join(save_dir, run_name, "final_model"))
+        if save_dir:
             json.dump(
                 result_dict,
                 open(os.path.join(save_dir, run_name, "final_result.json"), "w"),

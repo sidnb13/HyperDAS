@@ -15,14 +15,15 @@ model:
   selection_mechanism: dynamic
   lambda_parameter: 1e-3
   inference_modes: [null]
+  num_decoders: 2
 
 training:
   lr: 3e-5
   weight_decay: 0.01
   n_epochs: 5
   n_steps: -1
-  eval_per_steps: 100
-  save_model: true
+  eval_per_steps: 200
+  save_model: false
   debug_model: false
 
 loss:

@@ -11,7 +11,7 @@ model:
   subspace_module: "ReflectSelect"
   das_dimension: 128
   num_editing_heads: 32
-  num_decoders: 8
+  num_decoders: 2
   intervention_layer: 15
   inference_modes: [null]
 
@@ -20,7 +20,7 @@ training:
   weight_decay: 0.01
   n_epochs: 5
   n_steps: -1
-  eval_per_steps: 100
+  eval_per_steps: 200
   save_model: true
   debug_model: false
 
