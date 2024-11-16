@@ -1,8 +1,8 @@
 import json
 import os
+import warnings
 from math import ceil
 from typing import Dict, Optional
-import warnings
 
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -708,8 +708,8 @@ class RavelInterpretorHypernetwork(nn.Module):
         max_grad_norm = self.config.training.max_grad_norm
 
         if save_dir is not None and not os.path.exists(save_dir):
-            os.makedirs(save_dir)
-            OmegaConf.save(self.config, os.path.join(save_dir, "config.yaml"))
+            os.makedirs(os.path.join(save_dir, run_name))
+        OmegaConf.save(self.config, os.path.join(save_dir, run_name, "config.yaml"))
 
         trainable_parameters = []
         for name, param in self.named_parameters():
