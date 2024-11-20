@@ -3,12 +3,14 @@ services:
   hyperdas:
     restart: always
     container_name: hyperdas
-    image: hyperdas
+    image: ghcr.io/sidnb13/hyperdas:latest
     build:
       context: .
       dockerfile: ./Dockerfile
+      args:
+        GIT_EMAIL: ${GIT_EMAIL}
+        GIT_NAME: ${GIT_NAME}
     volumes:
-      - ./:/workspace/HyperDAS/
       - ./assets:/workspace/HyperDAS/assets
       - ~/.cache/huggingface/:~/.cache/huggingface/
       - ./.vscode-server:/.vscode-server # volume of the vscode plugins
