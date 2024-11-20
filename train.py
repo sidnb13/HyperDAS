@@ -54,7 +54,7 @@ def run_experiment(
             tags=config.wandb_config.tags,
             notes=config.wandb_config.notes,
         )
-        wandb.run.log_code("../src/hyperdas/")
+        wandb.run.log_code("/workspace/HyperDAS/src/hyperdas/")
 
     tokenizer = AutoTokenizer.from_pretrained(config.model.name_or_path)
     tokenizer.pad_token = tokenizer.eos_token

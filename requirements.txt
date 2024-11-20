@@ -20,3 +20,6 @@ tiktoken
 pyvene
 pre-commit
 hydra-joblib-launcher
+openai
+ipykernel
+jupyter

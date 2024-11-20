@@ -1,6 +1,7 @@
 # version: '3.8'
 services:
-  alignment-testbed:
+  hyperdas:
+    restart: always
     container_name: hyperdas
     image: hyperdas
     build:
@@ -9,7 +10,7 @@ services:
     volumes:
       - ./:/workspace/HyperDAS/
       - ./assets:/workspace/HyperDAS/assets
-      - ~/.cache/huggingface/:/.cache/huggingface/
+      - ~/.cache/huggingface/:~/.cache/huggingface/
       - ./.vscode-server:/.vscode-server # volume of the vscode plugins
       - ~/.ssh/id_ed25519:/root/.ssh/id_ed25519:ro # volume of the ssh keys
     # set environment variables
@@ -23,4 +24,3 @@ services:
               capabilities: [gpu]
     command: tail -f /dev/null
     ipc: host
-    restart: unless-stopped

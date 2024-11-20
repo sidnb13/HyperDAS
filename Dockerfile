@@ -1,5 +1,4 @@
-# Build stage
-FROM nvidia/cuda:12.4.1-devel-ubuntu22.04 AS builder
+FROM nvidia/cuda:12.1.0-devel-ubuntu22.04
 
 WORKDIR /workspace/HyperDAS
 
@@ -19,15 +18,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN ln -sf /usr/bin/python3.10 /usr/bin/python
 
 # Ensure pip is up to date
-RUN python -m ensurepip --upgrade && \
-    python -m pip install --no-cache-dir --upgrade pip setuptools wheel
+RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
 # Set the Python path
 ENV PATH="/usr/local/bin:${PATH}" \
     PYTHONPATH="/usr/local/lib/python3.10/dist-packages:${PYTHONPATH}"
-
-# Copy your application files
-COPY --from=builder /workspace/HyperDAS /workspace/HyperDAS
 
 # Set up git, vim, and other tools
 RUN apt-get update && \

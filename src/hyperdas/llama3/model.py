@@ -707,8 +707,7 @@ class RavelInterpretorHypernetwork(nn.Module):
         weight_decay = self.config.training.weight_decay
         max_grad_norm = self.config.training.max_grad_norm
 
-        if save_dir is not None and not os.path.exists(save_dir):
-            os.makedirs(os.path.join(save_dir, run_name))
+        os.makedirs(os.path.join(save_dir, run_name))
         OmegaConf.save(self.config, os.path.join(save_dir, run_name, "config.yaml"))
 
         trainable_parameters = []

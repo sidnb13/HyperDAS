@@ -315,7 +315,7 @@ def get_ravel_collate_fn(
 
 
 def generate_ravel_dataset(
-    n_samples,
+    n_samples=None,
     root_path="./data/ravel/ravel_clean",
     domain="city",
     isolate_attributes=["Continent"],
