@@ -1,89 +1,102 @@
 # HyperDAS
 
-## Setup
+## Quick Start
 
-1. Create and activate the Conda environment:
-   ```
-   conda create -n hyperdas python=3.8
-   conda activate hyperdas
-   ```
+1. Copy the environment template and configure your variables:
+```bash
+cp .env.example .env
+```
 
-2. Install the required packages:
-   
-   Option 1: Using requirements.txt
-   ```
-   pip install -r requirements.txt
-   ```
-   
-   Option 2: Using environment.yml (if available)
-   ```
-   conda env update -f environment.yml
-   ```
+2. Set required variables in `.env`:
+```bash
+GIT_NAME="your-github-username"
+GITHUB_TOKEN="your-github-token"  # Needs read:packages scope
+```
 
-3. Set up environment variables:
-   - Copy the `.env.example` file to `.env`
-   - Edit the `.env` file and set your HuggingFace token:
-     ```
-     HF_TOKEN="your_huggingface_token_here"
-     ```
+3. Launch on Lambda Labs:
+```bash
+# First time setup
+./scripts/setup_lambda.sh <instance-ip>
 
-4. Install pre-commit hooks:
-   ```
-   pre-commit install
-   # Optional, to run on all files right now
-   pre-commit run --all-files
-   ```
+# Subsequent code syncs
+./scripts/sync.sh <instance-ip>
+```
 
-## Usage
+## Docker Setup
 
-1. Activate the Conda environment:
-   ```
-   conda activate hyperdas
-   ```
+1. Build the container locally (need a GPU-enabled Linux machine with up-to-date NVIDIA drivers):
+```bash
+docker build -t ghcr.io/$GIT_NAME/hyperdas:latest .
+```
 
-2. Run the main training script:
-   ```
-   python train.py
-   ```
+2. Push to GitHub Container Registry:
+```bash
+# Login to GHCR
+echo $GITHUB_TOKEN | docker login ghcr.io -u $GIT_NAME --password-stdin
 
-   Or use the baseline training script:
-   ```
-   python train_baseline.py
-   ```
+# Push the image
+docker push ghcr.io/$GIT_NAME/hyperdas:latest
+```
 
-3. To use Hydra for configuration management, ensure `USE_HYDRA=true` in your `.env` file. You can then override config values:
-   ```
-   python train.py model_name_or_path=/path/to/your/model batch_size=32
-   ```
+3. Run locally (optional):
+```bash
+docker run -it --gpus all \
+    --name hyperdas \
+    --ipc host \
+    -v .:/workspace/HyperDAS \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    ghcr.io/$GIT_NAME/hyperdas:latest
+```
 
-4. For more detailed configuration options, refer to the `config/config.yaml` file.
+## Scripts
 
-## Docker Usage
+- `setup_lambda.sh`: Initial setup of Lambda instance
+  - Syncs credentials and environment
+  - Sets up Docker container
+  - Mounts necessary volumes
+  - Enables GPU access
 
-To use HyperDAS with Docker:
+- `sync.sh`: Quick sync of code changes
+  - Excludes unnecessary files (.git, __pycache__, etc.)
+  - Preserves running container state
 
-1. Ensure you have Docker and Docker Compose installed on your system.
+- `lambdalabs.sh`: Container management
+  - Handles Docker setup
+  - Manages environment variables
+  - Provides GPU access
+  - Sets up development environment
 
-2. Build the Docker image:
-   ```
-   docker-compose build
-   ```
+## Container Features
 
-3. Start the Docker container:
-   ```
-   docker-compose up -d
-   ```
+- CUDA-enabled PyTorch environment
+- Pre-configured for HuggingFace
+- VSCode remote development support
+- Persistent extension storage
+- SSH key forwarding
+- Environment variable management
 
-4. To access the container's shell:
-   ```
-   docker exec -it hyperdas /bin/bash
-   ```
+## Development
 
-5. Once inside the container, you can run the training scripts as described in the Usage section above.
+1. Connect to your instance via VSCode:
+   - Install "Remote - SSH" extension
+   - Add SSH config for your Lambda instance
+   - Connect to `ubuntu@<instance-ip>`
 
-6. To stop the container:
-   ```
-   docker-compose down
-   ```
+2. Container will automatically mount:
+   - Project files: `/workspace/HyperDAS`
+   - HuggingFace cache: `~/.cache/huggingface`
+   - SSH keys and Git config
+   - Environment variables
 
-Note: The Docker setup includes GPU support and mounts the necessary volumes for seamless development and data persistence.
+## Requirements
+
+- Local:
+  - SSH key pair
+  - GitHub token with `read:packages` scope
+  - Lambda Labs account
+  - Docker with NVIDIA Container Toolkit (for local builds)
+
+- Remote:
+  - Lambda Labs instance with GPU
+  - Ubuntu-based system
+  - Docker support

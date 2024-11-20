@@ -1,4 +1,5 @@
 resources:
+  cloud: lambda
   image_id: ghcr.io/${GIT_NAME}/hyperdas:latest
 
 setup: |
@@ -7,6 +8,7 @@ setup: |
 
 run: |
   source deactivate
+  nvidia-smi
 
 
 envs:

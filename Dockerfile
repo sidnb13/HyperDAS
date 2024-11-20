@@ -46,5 +46,12 @@ RUN git config --global user.email ${GIT_EMAIL} && \
     git config --global user.name ${GIT_NAME}
 
 # Install Python dependencies
+COPY requirements.txt .
 RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel && \
     pip install --no-cache-dir -r requirements.txt
+
+# Copy and set up entrypoint script
+COPY scripts/entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
