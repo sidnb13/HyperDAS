@@ -20,13 +20,18 @@ fi
 echo "🔄 Setting up Lambda Labs instance..."
 
 # Create directories
-ssh ubuntu@$LAMBDA_IP "mkdir -p ~/.ssh ~/.config/hyperdas ~/projects/HyperDAS"
+ssh ubuntu@$LAMBDA_IP "mkdir -p ~/.config/hyperdas ~/projects/HyperDAS"
 
-# Sync credentials
+# Set correct permissions before syncing
+echo "🔒 Setting correct SSH permissions..."
+ssh ubuntu@$LAMBDA_IP "mkdir -p ~/.ssh && chmod 700 ~/.ssh"
+
+# Sync credentials with correct permissions
 echo "🔑 Syncing credentials..."
 rsync -avz -e ssh \
-    ~/.ssh/id_ed25519* \
-    ubuntu@$LAMBDA_IP:~/.ssh/
+    ~/.ssh/github* \
+    ubuntu@$LAMBDA_IP:~/.ssh/ && \
+ssh ubuntu@$LAMBDA_IP "chmod 600 ~/.ssh/github*"
 
 # Sync environment file and append GITHUB_TOKEN if it exists locally
 echo "📄 Syncing .env file..."
@@ -45,9 +50,6 @@ rsync -avz --progress -e ssh \
     --exclude '.venv' \
     $PROJECT_ROOT/ \
     ubuntu@$LAMBDA_IP:~/projects/HyperDAS/
-
-# Set permissions
-ssh ubuntu@$LAMBDA_IP "chmod 700 ~/.ssh && chmod 600 ~/.ssh/id_ed25519"
 
 echo "🔧 Making scripts executable..."
 ssh ubuntu@$LAMBDA_IP "chmod +x ~/projects/HyperDAS/scripts/*.sh"

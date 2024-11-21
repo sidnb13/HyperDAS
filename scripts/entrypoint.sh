@@ -6,13 +6,6 @@ echo "🖥️  Container System Information:"
 nvidia-smi
 echo "-----------------------------------"
 
-# Set up SSH directory permissions
-if [ -f "/root/.ssh/github" ]; then
-    echo "🔑 Setting up SSH permissions..."
-    chmod 700 /root/.ssh
-    chmod 600 /root/.ssh/github
-fi
-
 # Check if CUDA is available
 if command -v nvidia-smi &> /dev/null; then
     echo "✅ CUDA is available"
@@ -36,10 +29,12 @@ echo "📂 Current working directory: $(pwd)"
 echo "📂 Contents of current directory:"
 ls -la
 
-# Check if we're running in VSCode environment
-if [ -d "/.vscode-server" ]; then
-    echo "👨‍💻 VSCode server directory detected"
-fi
+# Move git config setup to beginning before any other operations
+echo "🔧 Setting up git configuration..."
+
+git config --global --replace-all user.email "${GIT_EMAIL}"
+git config --global --replace-all user.name "${GIT_NAME}"
+git config --global --replace-all safe.directory /workspace/HyperDAS
 
 echo "🚀 Container is ready!"
 echo "-----------------------------------"
