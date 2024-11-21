@@ -9,7 +9,6 @@ fi
 LAMBDA_IP=$1
 PROJECT_ROOT=$(git rev-parse --show-toplevel)
 
-# Add this near the start of the script
 if [ -f "$PROJECT_ROOT/.env" ]; then
     echo "📝 Loading local environment variables..."
     set -a

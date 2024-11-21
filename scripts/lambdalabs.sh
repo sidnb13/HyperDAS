@@ -7,6 +7,7 @@ echo "🚀 Initializing HyperDAS container setup..."
 if ! groups "$(id -un)" | grep -q "\bdocker\b"; then
     echo "👥 Adding user to docker group..."
     sudo adduser "$(id -un)" docker
+    exec newgrp docker
 fi
 
 # Source environment variables
@@ -65,10 +66,12 @@ echo "📝 Remote image digest: ${REMOTE_DIGEST#sha256:}"
 
 if [ "$LOCAL_DIGEST" != "$REMOTE_DIGEST" ]; then
     echo "🔄 New version detected, updating container..."
-    docker pull "ghcr.io/$GIT_NAME/hyperdas:latest"
     # Remove existing container if it exists
     docker rm -f hyperdas 2>/dev/null || true
+    # Remove old image
     docker rmi ghcr.io/$GIT_NAME/hyperdas:latest 2>/dev/null || true
+    # Pull new image (do this only once!)
+    docker pull "ghcr.io/$GIT_NAME/hyperdas:latest"
 else
     echo "✅ Container is up to date"
     # Check if container exists but is not running
@@ -98,7 +101,6 @@ docker run -d \
     -v ~/projects/HyperDAS:/workspace/HyperDAS \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
     -v ~/.ssh:/root/.ssh \
-    -v ~/.config/hyperdas/.env:/workspace/HyperDAS/.env \
     -v vscode-extensions:/root/.vscode-server/extensions \
     -v vscode-extensions-insiders:/root/.vscode-server-insiders/extensions \
     -e GITHUB_TOKEN=$GITHUB_TOKEN \

@@ -1,6 +1,6 @@
 defaults:
   - /model: llama3_8b
-  - /dataset: country
+  - /dataset: city_country
   - /training: base
   - /loss: base
   - /wandb_config: base
