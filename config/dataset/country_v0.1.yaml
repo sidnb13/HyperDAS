@@ -1,7 +1,0 @@
-defaults:
-  - base
-  - _self_  # Ensure dataset-specific configs override base
-
-# edit_instruction_template="CHANGE: {base_entity} -> {source_entity} | ATTR: {random_target_attribute}"
-train_path: "experiments/RAVEL/data/city_country_train_v0.1"
-test_path: "experiments/RAVEL/data/city_country_test_v0.1"
