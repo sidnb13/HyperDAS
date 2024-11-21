@@ -1,0 +1,25 @@
+{
+	"name": "Existing Dockerfile",
+	"build": {
+		"context": "..",
+		"dockerfile": "../Dockerfile"
+	},
+	"workspaceFolder": "/workspace/HyperDAS",
+	"workspaceMount": "source=${localWorkspaceFolder},target=/workspace/HyperDAS,type=bind",
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				// Core Python extensions
+				"ms-python.python",
+				"ms-python.vscode-pylance",
+				"ms-python.debugpy",
+				// Jupyter support
+				"ms-toolsai.jupyter",
+				// Supermaven
+				"supermaven.supermaven",
+				// Optional but recommended for Python development
+				"charliermarsh.ruff"
+			]
+		}
+	}
+}
