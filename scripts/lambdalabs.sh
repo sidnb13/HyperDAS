@@ -7,7 +7,18 @@ echo "🚀 Initializing HyperDAS container setup..."
 if ! groups "$(id -un)" | grep -q "\bdocker\b"; then
     echo "👥 Adding user to docker group..."
     sudo adduser "$(id -un)" docker
-    exec newgrp docker
+    # Instead of exec newgrp, use sg to run the rest of the script with the new group
+    sg docker -c "$(readlink -f "$0") --continue"
+    exit 0
+fi
+
+# Add a flag check to prevent infinite recursion
+if [ "$1" != "--continue" ]; then
+    # First time running the script
+    if ! groups "$(id -un)" | grep -q "\bdocker\b"; then
+        echo "❌ Docker group permissions not applied. Please run the script again."
+        exit 1
+    fi
 fi
 
 # Source environment variables
