@@ -1,0 +1,27 @@
+{
+  "_data_files": [
+    {
+      "filename": "data-00000-of-00001.arrow"
+    }
+  ],
+  "_fingerprint": "d223362fe3f338da",
+  "_format_columns": [
+    "input_prefix",
+    "input_suffix",
+    "counterfactual_input_prefix",
+    "counterfactual_input_suffix",
+    "edit_instruction",
+    "entity",
+    "counterfactual_entity",
+    "target",
+    "counterfactual_target",
+    "attribute_type",
+    "domain",
+    "attribute",
+    "verify_text"
+  ],
+  "_format_kwargs": {},
+  "_format_type": null,
+  "_output_all_columns": false,
+  "_split": null
+}

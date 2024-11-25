@@ -2,9 +2,9 @@ pyvene
 models
 **/*/__pycache__
 *.pyc
+*.DS_Store
 wandb
 nlprun_fast.py
-data/
 *.pdf
 *.out
 .env
