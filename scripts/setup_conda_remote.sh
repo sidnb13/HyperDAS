@@ -22,15 +22,27 @@ ssh ubuntu@$REMOTE_IP "if [ ! -f ~/miniconda3/bin/conda ]; then \
     sh Miniconda3-latest-Linux-x86_64.sh -b && \
     rm Miniconda3-latest-Linux-x86_64.sh && \
     echo 'export PATH=~/miniconda3/bin:\$PATH' >> ~/.bashrc && \
+    ~/miniconda3/bin/conda init bash && \
     source ~/.bashrc; \
 fi"
 
-# Create conda environment with same Python version
-echo "🐍 Creating conda environment: $ENV_NAME..."
-ssh ubuntu@$REMOTE_IP "source ~/.bashrc && \
-    conda create -y -n $ENV_NAME python=$PYTHON_VERSION && \
-    conda activate $ENV_NAME && \
-    pip freeze > /tmp/requirements.txt"
+# Create conda environment with same Python version only if it doesn't exist
+echo "🐍 Setting up conda environment: $ENV_NAME..."
+ssh ubuntu@$REMOTE_IP "export PATH=~/miniconda3/bin:\$PATH && \
+    if ! ~/miniconda3/bin/conda env list | grep -q '^$ENV_NAME '; then \
+        if [ -f ~/projects/$ENV_NAME/environment.yml ]; then \
+            ~/miniconda3/bin/conda env create -f ~/projects/$ENV_NAME/environment.yml -n $ENV_NAME; \
+        else \
+            ~/miniconda3/bin/conda create -y -n $ENV_NAME python=$PYTHON_VERSION; \
+        fi \
+    else \
+        echo 'Environment already exists, skipping creation...'; \
+    fi && \
+    ~/miniconda3/bin/conda run -n $ENV_NAME pip freeze > /tmp/requirements.txt"
+
+# Create projects directory and environment-specific subdirectory
+echo "📁 Creating project directory..."
+ssh ubuntu@$REMOTE_IP "mkdir -p ~/projects/$ENV_NAME"
 
 # Sync project code (excluding unnecessary files)
 echo "📦 Syncing code..."
@@ -40,18 +52,33 @@ rsync -avz --progress -e ssh \
     --exclude 'node_modules' \
     --exclude '.venv' \
     --exclude '*.egg-info' \
-    --exclude '.git' \
     $PROJECT_ROOT/ \
     ubuntu@$REMOTE_IP:~/projects/$ENV_NAME/
 
 # Install dependencies
 echo "📚 Installing dependencies..."
-ssh ubuntu@$REMOTE_IP "source ~/.bashrc && \
-    conda activate $ENV_NAME && \
+ssh ubuntu@$REMOTE_IP "export PATH=~/miniconda3/bin:\$PATH && \
     cd ~/projects/$ENV_NAME && \
-    if [ -f requirements.txt ]; then pip install -r requirements.txt; fi && \
-    if [ -f setup.py ]; then pip install -e .; fi"
+    if [ ! -f environment.yml ] && [ -f requirements.txt ]; then \
+        ~/miniconda3/bin/conda run -n $ENV_NAME pip install -r requirements.txt; \
+    fi && \
+    if [ -f setup.py ]; then \
+        ~/miniconda3/bin/conda run -n $ENV_NAME pip install -e .; \
+    fi"
 
-echo "✅ Setup complete! You can now connect to the remote environment using:"
-echo "ssh ubuntu@$REMOTE_IP"
-echo "conda activate $ENV_NAME"
+# Initialize conda in .bashrc if not already done
+echo "🔧 Ensuring conda is initialized..."
+ssh ubuntu@$REMOTE_IP "~/miniconda3/bin/conda init bash && source ~/.bashrc"
+
+echo "✅ Setup complete! Connecting to remote environment..."
+# Create a temporary script that initializes conda and activates the environment
+ssh ubuntu@$REMOTE_IP "cat > /tmp/conda_init.sh << 'EOF'
+#!/bin/bash
+eval \"\$(~/miniconda3/bin/conda shell.bash hook)\"
+conda activate $ENV_NAME
+exec bash
+EOF
+chmod +x /tmp/conda_init.sh"
+
+# Connect and run the initialization script
+ssh -t ubuntu@$REMOTE_IP "bash /tmp/conda_init.sh"
