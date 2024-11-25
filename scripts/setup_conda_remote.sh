@@ -40,11 +40,14 @@ ssh ubuntu@$REMOTE_IP "export PATH=~/miniconda3/bin:\$PATH && \
     fi && \
     ~/miniconda3/bin/conda run -n $ENV_NAME pip freeze > /tmp/requirements.txt"
 
-# Create projects directory and environment-specific subdirectory
-echo "📁 Creating project directory..."
-ssh ubuntu@$REMOTE_IP "mkdir -p ~/projects/$ENV_NAME"
+# Get the project directory name from the root path
+PROJECT_DIR=$(basename $PROJECT_ROOT)
 
-# Sync project code (excluding unnecessary files)
+# Create projects directory with project name (not environment name)
+echo "📁 Creating project directory..."
+ssh ubuntu@$REMOTE_IP "mkdir -p ~/projects/$PROJECT_DIR"
+
+# Sync project code using PROJECT_DIR instead of ENV_NAME
 echo "📦 Syncing code..."
 rsync -avz --progress -e ssh \
     --exclude '__pycache__' \
@@ -53,12 +56,12 @@ rsync -avz --progress -e ssh \
     --exclude '.venv' \
     --exclude '*.egg-info' \
     $PROJECT_ROOT/ \
-    ubuntu@$REMOTE_IP:~/projects/$ENV_NAME/
+    ubuntu@$REMOTE_IP:~/projects/$PROJECT_DIR/
 
-# Install dependencies
+# Install dependencies using PROJECT_DIR
 echo "📚 Installing dependencies..."
 ssh ubuntu@$REMOTE_IP "export PATH=~/miniconda3/bin:\$PATH && \
-    cd ~/projects/$ENV_NAME && \
+    cd ~/projects/$PROJECT_DIR && \
     if [ ! -f environment.yml ] && [ -f requirements.txt ]; then \
         ~/miniconda3/bin/conda run -n $ENV_NAME pip install -r requirements.txt; \
     fi && \
