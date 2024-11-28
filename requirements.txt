@@ -23,3 +23,4 @@ hydra-joblib-launcher
 openai
 ipykernel
 jupyter
+hydra-ray-launcher

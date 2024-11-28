@@ -1,4 +1,3 @@
-# version: '3.8'
 services:
   hyperdas:
     restart: always
@@ -13,10 +12,11 @@ services:
     volumes:
       - ./assets:/workspace/HyperDAS/assets
       - ~/.cache/huggingface/:~/.cache/huggingface/
-      - ./.vscode-server:/.vscode-server # volume of the vscode plugins
-      - ~/.ssh/id_ed25519:/root/.ssh/id_ed25519:ro # volume of the ssh keys
-    # set environment variables
+      - ./.vscode-server:/.vscode-server
+      - ~/.ssh/id_ed25519:/root/.ssh/id_ed25519:ro
     env_file: .env
+    environment:
+      - RAY_HEAD_ADDRESS=ray-head:6379
     deploy:
       resources:
         reservations:
@@ -26,3 +26,17 @@ services:
               capabilities: [gpu]
     command: tail -f /dev/null
     ipc: host
+    depends_on:
+      - ray-head
+
+  ray-head:
+    image: rayproject/ray:latest
+    ports:
+      - "8265:8265"  # Ray dashboard
+      - "6379:6379"  # Ray head port
+    command: >
+      ray start --head
+      --port=6379
+      --dashboard-host=0.0.0.0
+      --dashboard-port=8265
+      --block
