@@ -3,8 +3,20 @@ name: build-push-cuda-docker-image
 on:
   push:
     branches: [main]
+    paths:
+      - "requirements*.txt"
+      - "Dockerfile"
+      - "docker-compose*.yml"
+      - ".docker/**"
+      - ".github/workflows/docker-build.yaml"
   pull_request:
     branches: [main]
+    paths:
+      - "requirements*.txt"
+      - "Dockerfile"
+      - "docker-compose*.yml"
+      - ".docker/**"
+      - ".github/workflows/docker-build.yaml"
 
 permissions:
   contents: read
@@ -34,14 +46,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_PAT }}
 
-      - name: Build and push
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/hyperdas:latest
-            ghcr.io/${{ github.repository_owner }}/hyperdas:${{ github.sha }}
-          build-args: |
-            GIT_EMAIL=${{ github.actor }}@users.noreply.github.com
-            GIT_NAME=${{ github.actor }}
+      - name: Create .env file
+        run: |
+          echo "GIT_EMAIL=${{ secrets.GIT_EMAIL }}" > .env
+          echo "GIT_NAME=${{ github.actor }}" >> .env
+
+      - name: Build and push with Docker Compose
+        run: |
+          docker compose build
+          docker compose push

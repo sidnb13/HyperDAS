@@ -61,6 +61,7 @@ class LlamaInterpretorConfig(LlamaConfig):
     dict_size: int = None
     orthogonal_init: bool = False
     scoring_dimension: int = 8
+    hat_matrix: bool = False
     # Other
     freeze_das_module: List[str] = None
 
@@ -590,6 +591,7 @@ class LlamaInterpretor(nn.Module):
                     compute_metrics=compute_metrics,
                     orthogonal_init=config.orthogonal_init,
                     selection_mechanism=config.selection_mechanism,
+                    hat_matrix=config.hat_matrix
                 )
             else:
                 raise ValueError("Invalid subspace module")

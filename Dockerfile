@@ -46,16 +46,17 @@ RUN apt-get update && \
     echo "set -o vi" >> ~/.bashrc && \
     git config --global core.editor "vim"
 
-# Set zsh as default shell
-SHELL ["/bin/zsh", "-c"]
 
 # Set environment variables
 ENV PATH="/usr/local/bin:${PATH}" \
     PYTHONPATH="/usr/local/lib/python3.10/dist-packages:${PYTHONPATH}"
 
-# Configure git
-RUN git config --global user.email ${GIT_EMAIL} && \
-    git config --global user.name ${GIT_NAME}
+# Configure git (modified to use zsh syntax)
+RUN git config --global user.email "${GIT_EMAIL}" && \
+    git config --global user.name "${GIT_NAME}"
+
+# Set zsh as default shell
+SHELL ["/bin/zsh", "-c"]
 
 # Install Python dependencies
 COPY requirements.txt .

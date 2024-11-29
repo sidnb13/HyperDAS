@@ -21,3 +21,4 @@ ablate_source_token_attention: false
 break_asymmetric: false
 importance_power: -2
 epsilon: 1e-6
+hat_matrix: false

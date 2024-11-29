@@ -656,6 +656,7 @@ class QuasiProjectiveIntervention(
         ] = "full",
         scoring_dimension: int = 1,
         orthogonal_init=False,
+        hat_matrix=False,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -663,6 +664,7 @@ class QuasiProjectiveIntervention(
         self.dict_size = dict_size
         self.top_k_parameter = top_k_parameter
         self.scoring_dimension = scoring_dimension
+        self.hat_matrix = hat_matrix
 
         # note: you could technically set top_k_parameter equal to full dictionary, it'd just be more expensive computationally
         # and you might want more fall-off
@@ -850,7 +852,10 @@ class QuasiProjectiveIntervention(
         XTX = torch.matmul(
             X, X.transpose(-2, -1)
         )  # XTX: (batch x num_active_features x d_embed) * (batch x d_embed x num_active_features)
-        XTY = torch.matmul(X, Y.transpose(-2, -1))  # XTY: batch x d_embed x seq
+        if self.hat_matrix:
+            XT = X.transpose(-2, -1)
+        else:
+            XTY = torch.matmul(X, Y.transpose(-2, -1))  # XTY: batch x d_embed x seq
         # diag_denominator_scores = torch.diag_embed(denominator_scores)  #diag_denominator_scores: batch x num_active_features x num_active_features
         if (
             "dynamic" in self.selection_mechanism
@@ -869,9 +874,11 @@ class QuasiProjectiveIntervention(
 
         # Cast regularized_XTX and XTY to float32
         regularized_XTX = regularized_XTX.to(torch.float32)
-        XTY = XTY.to(torch.float32)
+        if self.hat_matrix:
+            XT = XT.to(torch.float32)
+        else:
+            XTY = XTY.to(torch.float32)
 
-        # Solve the system
         def solve_single(A, b):
             # Compute Cholesky decomposition
             L = torch.linalg.cholesky(A)
@@ -883,7 +890,13 @@ class QuasiProjectiveIntervention(
 
             return x
 
-        ridge_coeffs = torch.vmap(solve_single, in_dims=(0, 0))(regularized_XTX, XTY)
+        if self.hat_matrix:
+            # Solve for beta' instead of beta to compute df
+            ridge_coeffs = torch.vmap(solve_single, in_dims=(0, 0))(regularized_XTX, XT)
+        else:
+            ridge_coeffs = torch.vmap(solve_single, in_dims=(0, 0))(
+                regularized_XTX, XTY
+            )
 
         if self.compute_metrics and self.training:
             if denominator_scores is not None:
@@ -895,7 +908,19 @@ class QuasiProjectiveIntervention(
                 importance_scores.norm(dim=-1).mean().item()
             )
 
+            # effective dimensionality from sum(trace(eig(H))^2 / (trace(eig(H))^2 + lambda))
+            # for regression hat matrix H
+            if self.hat_matrix:
+                hat_matrix = torch.bmm(X, ridge_coeffs.transpose(-2, -1))
+                metrics["effective_dim"] = (
+                    hat_matrix.diagonal(offset=0, dim1=-1, dim2=-2).sum().item()
+                ).mean()
+
         # Cast ridge_coeffs back to the original dtype
+        if self.hat_matrix:
+            # beta = beta' @ Y
+            ridge_coeffs = torch.bmm(ridge_coeffs, Y)
+
         ridge_coeffs = ridge_coeffs.to(X.dtype)
 
         # Multiply thru by X

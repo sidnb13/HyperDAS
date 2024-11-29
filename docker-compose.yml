@@ -16,7 +16,7 @@ services:
       - ~/.ssh/id_ed25519:/root/.ssh/id_ed25519:ro
     env_file: .env
     environment:
-      - RAY_HEAD_ADDRESS=ray-head:6379
+      - RAY_ADDRESS=ray://ray-head:10001
     deploy:
       resources:
         reservations:
@@ -32,11 +32,18 @@ services:
   ray-head:
     image: rayproject/ray:latest
     ports:
-      - "8265:8265"  # Ray dashboard
-      - "6379:6379"  # Ray head port
+      - "8265:8265" # Ray dashboard
+      - "10001:10001" # Ray client server port
     command: >
       ray start --head
       --port=6379
+      --ray-client-server-port=10001
       --dashboard-host=0.0.0.0
       --dashboard-port=8265
       --block
+    networks:
+      - ray_network
+
+networks:
+  ray_network:
+    driver: bridge

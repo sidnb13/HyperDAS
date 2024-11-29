@@ -66,6 +66,7 @@ class RavelInterpretorHypernetwork(nn.Module):
         self.interpretor_config.dict_size = config.model.dict_size
         self.interpretor_config.orthogonal_init = config.model.orthogonal_init
         self.interpretor_config.selection_mechanism = config.model.selection_mechanism
+        self.interpretor_config.hat_matrix = config.model.hat_matrix
 
         # Initialize model components
         self.interpretor = LlamaInterpretor(
