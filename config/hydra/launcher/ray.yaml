@@ -1,0 +1,11 @@
+_target_: hydra_plugins.hydra_ray_launcher.ray_launcher.RayLauncher
+ray:
+  init:
+    address: "ray://ray-head:10001"  # Ray Client protocol
+    runtime_env:
+      working_dir: "."
+  remote:
+    max_retries: 3
+    num_cpus: 1
+    num_gpus: 1
+    stream_output: false

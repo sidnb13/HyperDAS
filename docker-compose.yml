@@ -2,7 +2,7 @@ services:
   hyperdas:
     restart: always
     container_name: hyperdas
-    image: ghcr.io/sidnb13/hyperdas:latest
+    image: ghcr.io/${GITHUB_USERNAME}/hyperdas:latest  # Changed from ${GIT_NAME}
     build:
       context: .
       dockerfile: ./Dockerfile
@@ -10,13 +10,15 @@ services:
         GIT_EMAIL: ${GIT_EMAIL}
         GIT_NAME: ${GIT_NAME}
     volumes:
+      - .:/workspace/HyperDAS # Mount current directory to workspace
       - ./assets:/workspace/HyperDAS/assets
-      - ~/.cache/huggingface/:~/.cache/huggingface/
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
       - ./.vscode-server:/.vscode-server
-      - ~/.ssh/id_ed25519:/root/.ssh/id_ed25519:ro
+      - ${HOME}/.ssh/id_ed25519:/root/.ssh/id_ed25519:ro
     env_file: .env
     environment:
       - RAY_ADDRESS=ray://ray-head:10001
+      - RAY_NODE_IP_ADDRESS=hyperdas # Container's own IP
     deploy:
       resources:
         reservations:
@@ -26,24 +28,38 @@ services:
               capabilities: [gpu]
     command: tail -f /dev/null
     ipc: host
+    networks:
+      - ray_network
     depends_on:
       - ray-head
 
   ray-head:
-    image: rayproject/ray:latest
+    image: rayproject/ray:2.39.0-py312
+    container_name: ray-head
     ports:
-      - "8265:8265" # Ray dashboard
-      - "10001:10001" # Ray client server port
+      - "8265:8265"
+      - "10001:10001"
+      - "6379:6379"
     command: >
       ray start --head
-      --port=6379
-      --ray-client-server-port=10001
+      --include-dashboard=true
       --dashboard-host=0.0.0.0
       --dashboard-port=8265
+      --port=6379
+      --ray-client-server-port=10001
+      --node-ip-address=ray-head
       --block
+    deploy: # Add GPU access
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     networks:
       - ray_network
 
 networks:
   ray_network:
-    driver: bridge
+    name: ray_network
+    external: true

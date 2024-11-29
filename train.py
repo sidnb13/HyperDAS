@@ -5,6 +5,7 @@ from datetime import datetime
 
 import hydra
 import torch
+import wandb
 from datasets import load_from_disk
 from dotenv import load_dotenv
 from hydra.core.hydra_config import HydraConfig
@@ -13,11 +14,13 @@ from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 
-import wandb
 from logger import get_logger
+from ray_patch import patch_ray_launcher
 from src.hyperdas.data_utils import (
     get_ravel_collate_fn,
 )
+
+patch_ray_launcher()
 
 load_dotenv(override=True)
 

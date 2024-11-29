@@ -7,7 +7,12 @@ ENV GIT_EMAIL=${GIT_EMAIL}
 ENV GIT_NAME=${GIT_NAME}
 
 WORKDIR /workspace/HyperDAS
-COPY ./ .
+
+COPY requirements.txt .
+COPY scripts/entrypoint.sh /usr/local/bin/
+
+ENV TZ=Etc/UTC
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 # Combine all apt-get commands and cleanup in a single layer
 RUN apt-get update && \
@@ -27,25 +32,24 @@ RUN apt-get update && \
     ncdu \
     nvtop \
     openssh-client \
-    python3-pip \
-    python3.10-dev \
+    software-properties-common \
     screen \
     sudo \
     vim \
     wget \
     zsh && \
-    sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/v1.1.5/zsh-in-docker.sh)" -- \
-    -t robbyrussell \
-    -p git \
-    -p https://github.com/zsh-users/zsh-history-substring-search \
-    -p https://github.com/zsh-users/zsh-syntax-highlighting \
-    -p https://github.com/zsh-users/zsh-autosuggestions \
-    -p https://github.com/zsh-users/zsh-completions && \
+    add-apt-repository ppa:deadsnakes/ppa && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+    python3.12 \
+    python3.12-dev \
+    python3.12-distutils \
+    python3.12-venv && \
     rm -rf /var/lib/apt/lists/* && \
-    ln -sf /usr/bin/python3.10 /usr/bin/python && \
+    ln -sf /usr/bin/python3.12 /usr/bin/python && \
+    curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12 && \
     echo "set -o vi" >> ~/.bashrc && \
     git config --global core.editor "vim"
-
 
 # Set environment variables
 ENV PATH="/usr/local/bin:${PATH}" \
@@ -58,10 +62,10 @@ RUN git config --global user.email "${GIT_EMAIL}" && \
 # Set zsh as default shell
 SHELL ["/bin/zsh", "-c"]
 
-# Install Python dependencies
 COPY requirements.txt .
-RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir -r requirements.txt
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    /root/.local/bin/uv pip install --system --no-cache-dir --upgrade pip setuptools wheel && \
+    /root/.local/bin/uv pip install --system --no-cache-dir -r requirements.txt
 
 # Copy and set up entrypoint script
 COPY scripts/entrypoint.sh /usr/local/bin/

@@ -23,4 +23,6 @@ hydra-joblib-launcher
 openai
 ipykernel
 jupyter
+ray[default]==2.39.0
 hydra-ray-launcher
+hydra_colorlog
