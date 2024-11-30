@@ -19,9 +19,17 @@ if [ "$1" != "--continue" ]; then
     fi
 fi
 
+cleanup_tunnel() {
+    if [ -f /tmp/hyperdas_tunnel.pid ]; then
+        pkill -F /tmp/hyperdas_tunnel.pid
+        rm /tmp/hyperdas_tunnel.pid
+    fi
+}
+
 # Cleanup function for containers and network
 cleanup_containers() {
     echo "🧹 Cleaning up existing containers..."
+    cleanup_tunnel
     docker rm -f hyperdas ray-head 2>/dev/null || true
     docker network rm ray_network 2>/dev/null || true
 }
@@ -80,6 +88,7 @@ else
         cleanup_containers
     elif docker ps | grep -q hyperdas; then
         echo "✅ Containers are already running"
+        cleanup_tunnel
         docker exec -it hyperdas /bin/bash
         exit 0
     fi
@@ -95,6 +104,7 @@ echo "🚀 Launching containers..."
 docker network create ray_network 2>/dev/null || true
 
 echo "🐳 Starting containers..."
+export GITHUB_USERNAME=$GIT_NAME
 docker compose up -d
 
 # Check if container is running
@@ -108,5 +118,6 @@ else
     echo "❌ Error: Container failed to start"
     echo "📜 Container logs:"
     docker logs hyperdas
+    cleanup_tunnel
     exit 1
 fi

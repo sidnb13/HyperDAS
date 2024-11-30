@@ -15,14 +15,9 @@ from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 
 from logger import get_logger
-from ray_patch import patch_ray_launcher
 from src.hyperdas.data_utils import (
     get_ravel_collate_fn,
 )
-
-patch_ray_launcher()
-
-load_dotenv(override=True)
 
 logger = get_logger(__name__)
 
@@ -174,4 +169,5 @@ def main(cfg: DictConfig):
 
 
 if __name__ == "__main__":
+    load_dotenv(override=True)
     main()

@@ -1,9 +1,11 @@
 import gc
 import os
+import random
 from datetime import datetime
 
 import hydra
 import torch
+import wandb
 from datasets import load_from_disk
 from dotenv import load_dotenv
 from hydra.core.hydra_config import HydraConfig
@@ -12,7 +14,6 @@ from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 
-import wandb
 from logger import get_logger
 from src.hyperdas.data_utils import get_ravel_collate_fn
 from src.mdas.llama3.model import RavelMDASNetwork
@@ -109,34 +110,34 @@ def main(cfg: DictConfig):
         logger.info(f"Original working directory    : {get_original_cwd()}")
         logger.info(f"to_absolute_path('foo')       : {to_absolute_path('foo')}")
         logger.info(f"to_absolute_path('/foo')      : {to_absolute_path('/foo')}")
-        logger.info(f"Config: {OmegaConf.to_yaml(cfg)}")
 
-        # Get the total number of GPUs
-        num_gpus = torch.cuda.device_count()
-        logger.info(f"Number of GPUs: {num_gpus}")
+        # Check if we're running in serial mode
+        is_serial = os.environ.get("LAUNCH_MODE", "parallel") == "serial"
 
-        # Get the current job number from Hydra's multi-run counter
-        try:
-            job_num = getattr(HydraConfig.get().job, "num", 0)
-            logger.info(f"Job number: {job_num}")
-        except Exception:
-            # If we're not in a multirun, job.num doesn't exist
-            job_num = 0
-            logger.debug("Not in a multirun, defaulting job number to 0")
+        if is_serial:
+            # Use single GPU for serial mode
+            device = "cuda:0"
+        else:
+            # Use distributed GPUs for parallel mode
+            num_gpus = torch.cuda.device_count()
+            try:
+                job_num = getattr(HydraConfig.get().job, "num", 0)
+            except Exception:
+                job_num = 0
+            gpu_id = job_num % num_gpus
+            device = f"cuda:{gpu_id}"
 
-        # Get a unique job identifier (output directory)
-        job_id = HydraConfig.get().run.dir
-        logger.info(f"Job ID: {job_id}")
+        logger.info(
+            f"Running in {'serial' if is_serial else 'parallel'} mode on device {device}"
+        )
 
-        # Assign a GPU based on the job number
-        gpu_id = job_num % num_gpus
-        device = f"cuda:{gpu_id}"
-        logger.info(f"Assigned device: {device}")
+        if not is_serial:
+            torch.cuda.set_device(device)
 
-        torch.cuda.set_device(device)
+        # Set seed
+        torch.manual_seed(cfg.training.seed)
+        random.seed(cfg.training.seed)
 
-        # Pass the device to your run_experiment function
-        logger.info(f"Launching job {job_id} on GPU {device}")
         run_experiment(cfg, device)
 
         torch.cuda.empty_cache()

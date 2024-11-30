@@ -20,9 +20,9 @@ tiktoken
 pyvene
 pre-commit
 hydra-joblib-launcher
+hydra-submitit-launcher
 openai
 ipykernel
 jupyter
-ray[default]==2.39.0
-hydra-ray-launcher
 hydra_colorlog
+ray[default]
