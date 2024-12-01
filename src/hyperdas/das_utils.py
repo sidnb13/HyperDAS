@@ -852,9 +852,7 @@ class QuasiProjectiveIntervention(
         XTX = torch.matmul(
             X, X.transpose(-2, -1)
         )  # XTX: (batch x num_active_features x d_embed) * (batch x d_embed x num_active_features)
-        if self.hat_matrix:
-            XT = X.transpose(-2, -1)
-        else:
+        if not self.hat_matrix:
             XTY = torch.matmul(X, Y.transpose(-2, -1))  # XTY: batch x d_embed x seq
         # diag_denominator_scores = torch.diag_embed(denominator_scores)  #diag_denominator_scores: batch x num_active_features x num_active_features
         if (
@@ -874,9 +872,7 @@ class QuasiProjectiveIntervention(
 
         # Cast regularized_XTX and XTY to float32
         regularized_XTX = regularized_XTX.to(torch.float32)
-        if self.hat_matrix:
-            XT = XT.to(torch.float32)
-        else:
+        if not self.hat_matrix:
             XTY = XTY.to(torch.float32)
 
         def solve_single(A, b):
@@ -892,11 +888,13 @@ class QuasiProjectiveIntervention(
 
         if self.hat_matrix:
             # Solve for beta' instead of beta to compute df
-            ridge_coeffs = torch.vmap(solve_single, in_dims=(0, 0))(regularized_XTX, XT)
+            ridge_coeffs = torch.vmap(solve_single, in_dims=(0, 0))(regularized_XTX, X)
         else:
             ridge_coeffs = torch.vmap(solve_single, in_dims=(0, 0))(
                 regularized_XTX, XTY
             )
+
+        ridge_coeffs = ridge_coeffs.to(X.dtype)
 
         if self.compute_metrics and self.training:
             if denominator_scores is not None:
@@ -912,16 +910,12 @@ class QuasiProjectiveIntervention(
             # for regression hat matrix H
             if self.hat_matrix:
                 hat_matrix = torch.bmm(X, ridge_coeffs.transpose(-2, -1))
-                metrics["effective_dim"] = (
-                    hat_matrix.diagonal(offset=0, dim1=-1, dim2=-2).sum().item()
-                ).mean()
+                trace_matrix = hat_matrix.diagonal(offset=0, dim1=-1, dim2=-2)
+                metrics["effective_dim"] = trace_matrix.sum(-1).mean()
 
-        # Cast ridge_coeffs back to the original dtype
         if self.hat_matrix:
             # beta = beta' @ Y
-            ridge_coeffs = torch.bmm(ridge_coeffs, Y)
-
-        ridge_coeffs = ridge_coeffs.to(X.dtype)
+            ridge_coeffs = torch.bmm(ridge_coeffs, Y.transpose(-2, -1))
 
         # Multiply thru by X
         predictions = torch.matmul(ridge_coeffs.transpose(-2, -1), X)

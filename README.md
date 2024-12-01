@@ -10,19 +10,29 @@ cp .env.example .env
 2. Set required variables in `.env`:
 ```bash
 GIT_NAME="your-github-username"
-GITHUB_TOKEN="your-github-token"  # Needs read:packages scope
+GIT_EMAIL="your-github-email"
+GITHUB_TOKEN="your-github-token"  # Needs read:packages and write:packages scopes
+...etc.
 ```
+
+You will need a Github Personal Access Token with the `read:packages` and `write:packages` scopes in ordet to push and pull from the GitHub Container Registry.
 
 3. Launch on Lambda Labs:
-```bash
-# First time setup
-./scripts/setup_lambda.sh <instance-ip>
 
-# Subsequent code syncs
-./scripts/sync.sh <instance-ip>
+The container starts a local Ray cluster, to which you can submit & queue GPU jobs from within the Docker container.
+The script will expose an SSH tunnel to the remote machine, allowing you to access the Ray dashboard at `http://localhost:8765` to monitor job status. It will sync code, SSH keys, and secrets to the remote machine, and pull the latest image from GHCR & start the container.
+
+```bash
+./scripts/setup_lambda.sh <instance-ip>
 ```
 
-## Docker Setup
+4. Launching jobs:
+
+We use [Hydra](https://github.com/facebookresearch/hydra) for configuration management. You can specify an experiment and train a model with `python train.py experiment=<experiment_name>/<experiment_config>` which is a collection of model, training, and loss hyperparameters. Specify configuration overrides under the experiment config, e.g. `experiment.model.das_dimension=128`.
+
+Queue a non-blocking job to the local ray cluster with `ray job submit --entrypoint-num-gpus=<num-gpus> --no-wait -- python train.py experiment=<experiment_name>/<experiment_config>`.
+
+## Manual Docker Setup
 
 1. Build the container locally (need a GPU-enabled Linux machine with up-to-date NVIDIA drivers):
 ```bash
@@ -38,6 +48,8 @@ echo $GITHUB_TOKEN | docker login ghcr.io -u $GIT_NAME --password-stdin
 docker push ghcr.io/$GIT_NAME/hyperdas:latest
 ```
 
+The build workflow located under `.github/workflows/build.yml` will automatically build and push the image to the GitHub Container Registry when the dockerfiles or dependencies change on push to the main branch.
+
 3. Run locally (optional):
 ```bash
 docker run -it --gpus all \
@@ -47,56 +59,3 @@ docker run -it --gpus all \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
     ghcr.io/$GIT_NAME/hyperdas:latest
 ```
-
-## Scripts
-
-- `setup_lambda.sh`: Initial setup of Lambda instance
-  - Syncs credentials and environment
-  - Sets up Docker container
-  - Mounts necessary volumes
-  - Enables GPU access
-
-- `sync.sh`: Quick sync of code changes
-  - Excludes unnecessary files (.git, __pycache__, etc.)
-  - Preserves running container state
-
-- `lambdalabs.sh`: Container management
-  - Handles Docker setup
-  - Manages environment variables
-  - Provides GPU access
-  - Sets up development environment
-
-## Container Features
-
-- CUDA-enabled PyTorch environment
-- Pre-configured for HuggingFace
-- VSCode remote development support
-- Persistent extension storage
-- SSH key forwarding
-- Environment variable management
-
-## Development
-
-1. Connect to your instance via VSCode:
-   - Install "Remote - SSH" extension
-   - Add SSH config for your Lambda instance
-   - Connect to `ubuntu@<instance-ip>`
-
-2. Container will automatically mount:
-   - Project files: `/workspace/HyperDAS`
-   - HuggingFace cache: `~/.cache/huggingface`
-   - SSH keys and Git config
-   - Environment variables
-
-## Requirements
-
-- Local:
-  - SSH key pair
-  - GitHub token with `read:packages` scope
-  - Lambda Labs account
-  - Docker with NVIDIA Container Toolkit (for local builds)
-
-- Remote:
-  - Lambda Labs instance with GPU
-  - Ubuntu-based system
-  - Docker support
