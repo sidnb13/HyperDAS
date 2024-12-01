@@ -72,18 +72,19 @@ rsync -avz --progress -e ssh \
     --exclude 'assets' \
     --exclude '.env' \
     --exclude 'node_modules' \
+    --exclude '.git' \
     --exclude '.venv' \
-    $PROJECT_ROOT/ \
+    "${PROJECT_ROOT}/" \
     ubuntu@$LAMBDA_IP:~/projects/HyperDAS/
 
 echo "🔧 Making scripts executable..."
 ssh ubuntu@$LAMBDA_IP "chmod +x ~/projects/HyperDAS/scripts/*.sh"
 
-echo "🚀 Starting container on Lambda instance..."
-ssh -t ubuntu@$LAMBDA_IP "cd ~/projects/HyperDAS && ./scripts/lambdalabs.sh"
-
 echo "🔗 Setting up SSH tunnel..."
 setup_ssh_tunnel $LAMBDA_IP
+
+echo "🚀 Starting container on Lambda instance..."
+ssh -t ubuntu@$LAMBDA_IP "cd ~/projects/HyperDAS && ./scripts/lambdalabs.sh"
 
 # If the SSH session ends, clean up the tunnel
 trap 'pkill -F /tmp/hyperdas_tunnel.pid; rm /tmp/hyperdas_tunnel.pid' EXIT
