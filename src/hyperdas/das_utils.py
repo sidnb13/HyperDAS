@@ -723,6 +723,12 @@ class QuasiProjectiveIntervention(
         self.input_layernorm = LlamaRMSNorm(hidden_size=self.embed_dim, eps=1e-5).to(
             dtype=torch_dtype
         )
+        self.base_layernorm = LlamaRMSNorm(hidden_size=self.embed_dim, eps=1e-5).to(
+            dtype=torch_dtype
+        )
+        self.source_layernorm = LlamaRMSNorm(hidden_size=self.embed_dim, eps=1e-5).to(
+            dtype=torch_dtype
+        )
 
     def load_state_dict(
         self, state_dict: Mapping[str, Any], strict: bool = True, assign: bool = False
@@ -911,7 +917,8 @@ class QuasiProjectiveIntervention(
             if self.hat_matrix:
                 hat_matrix = torch.bmm(X, ridge_coeffs.transpose(-2, -1))
                 trace_matrix = hat_matrix.diagonal(offset=0, dim1=-1, dim2=-2)
-                metrics["effective_dim"] = trace_matrix.sum(-1).mean()
+                with torch.no_grad():
+                    metrics["effective_dim"] = trace_matrix.sum(-1).mean().item()
 
         if self.hat_matrix:
             # beta = beta' @ Y
@@ -933,6 +940,10 @@ class QuasiProjectiveIntervention(
         dictionary_encodings = self.edit_instruction_encodings(
             normalized_hidden_state
         )  # dictionary_encodings: batch x (d_embed or scoring_dimension)
+
+        # Normalize base and source prior to regression
+        normalized_base = self.base_layernorm(base)
+        normalized_source = self.source_layernorm(source)
 
         # Perform top-k index selection
         # top_k_indices: batch x k; top_k_values: batch x k
@@ -971,13 +982,13 @@ class QuasiProjectiveIntervention(
 
         base_interchange, base_metrics = self.compute_closeform_ridge(
             selected_dictionary,
-            base,
+            normalized_base,
             top_k_values,
             importance_power=self.importance_power,
         )
         source_interchange, source_metrics = self.compute_closeform_ridge(
             selected_dictionary,
-            source,
+            normalized_source,
             top_k_values,
             importance_power=self.importance_power,
         )

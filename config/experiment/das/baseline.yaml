@@ -25,7 +25,6 @@ training:
   debug_model: false
 
 loss:
-  lambda_parameter: 1e-3
   return_penalty: false
   sparsity:
     apply: true

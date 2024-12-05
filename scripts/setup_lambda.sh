@@ -72,7 +72,6 @@ rsync -avz --progress -e ssh \
     --exclude 'assets' \
     --exclude '.env' \
     --exclude 'node_modules' \
-    --exclude '.git' \
     --exclude '.venv' \
     "${PROJECT_ROOT}/" \
     ubuntu@$LAMBDA_IP:~/projects/HyperDAS/

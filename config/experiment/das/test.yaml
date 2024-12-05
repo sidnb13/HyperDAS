@@ -22,7 +22,6 @@ training:
   debug_model: true
 
 loss:
-  lambda_parameter: 1e-3
   return_penalty: false
 
 wandb_config:
