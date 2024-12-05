@@ -39,3 +39,21 @@ services:
               count: all
               capabilities: [gpu]
     ipc: host
+
+    healthcheck:
+      test: ["CMD-SHELL", "test -s `which nvidia-smi` && nvidia-smi || exit 1"]
+      start_period: 1s
+      interval: 20s
+      timeout: 5s
+      retries: 2
+    labels:
+      - autoheal=true
+      - autoheal.stop.timeout=1
+
+  autoheal:
+    image: willfarrell/autoheal
+    environment:
+      - AUTOHEAL_CONTAINER_LABEL=all
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: always

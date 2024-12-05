@@ -16,6 +16,7 @@ model:
   lambda_parameter: 1e-3
   inference_modes: [null]
   num_decoders: 2
+  hat_matrix: true
 
 training:
   lr: 3e-5
