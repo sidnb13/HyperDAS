@@ -1,0 +1,6 @@
+defaults:
+  - base
+  - _self_  # Ensure dataset-specific configs override base
+
+train_path: "experiments/RAVEL/data/all_domains_train"
+test_path: "experiments/RAVEL/data/all_domains_test"
