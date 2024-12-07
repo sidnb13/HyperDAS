@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import contextlib
+from collections import namedtuple
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 import torch
 from transformers import PretrainedConfig
 from transformers.modeling_outputs import BaseModelOutput, ModelOutput
+
+NamedDataLoader = namedtuple("NamedDataLoader", ["name", "data_loader"])
+
 
 
 def rotate_half(x):

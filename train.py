@@ -4,6 +4,7 @@ import random
 from datetime import datetime
 
 import hydra
+import omegaconf
 import torch
 import wandb
 from datasets import load_from_disk
@@ -18,6 +19,8 @@ from logger import get_logger
 from src.hyperdas.data_utils import (
     get_ravel_collate_fn,
 )
+from src.hyperdas.llama3.model import RavelInterpretorHypernetwork
+from src.hyperdas.utils import NamedDataLoader
 
 logger = get_logger(__name__)
 
@@ -62,7 +65,12 @@ def run_experiment(
     tokenizer.pad_token_id = tokenizer.eos_token_id
 
     train_set = load_from_disk(config.dataset.train_path)
-    test_set = load_from_disk(config.dataset.test_path)
+
+    # Load multiple test sets
+    if isinstance(config.dataset.test_path, (list, omegaconf.ListConfig)):
+        test_set = [load_from_disk(path) for path in config.dataset.test_path]
+    else:
+        test_set = load_from_disk(config.dataset.test_path)
 
     collate_fn = get_ravel_collate_fn(
         tokenizer,
@@ -89,16 +97,35 @@ def run_experiment(
         pin_memory=True,
     )
 
-    test_data_loader = DataLoader(
-        test_set,
-        batch_size=config.training.test_batch_size,
-        collate_fn=collate_fn,
-        shuffle=True,
-        num_workers=num_workers,
-        pin_memory=True,
-    )
-
-    from src.hyperdas.llama3.model import RavelInterpretorHypernetwork
+    if isinstance(test_set, list):
+        test_data_loader = [
+            NamedDataLoader(
+                data_loader=DataLoader(
+                    test_set_,
+                    batch_size=config.training.test_batch_size,
+                    collate_fn=collate_fn,
+                    shuffle=True,
+                    num_workers=num_workers,
+                    pin_memory=True,
+                ),
+                name=os.path.basename(config.dataset.test_path[i]),
+            )
+            for i, test_set_ in enumerate(test_set)
+        ]
+    else:
+        test_data_loader = [
+            NamedDataLoader(
+                data_loader=DataLoader(
+                    test_set,
+                    batch_size=config.training.test_batch_size,
+                    collate_fn=collate_fn,
+                    shuffle=True,
+                    num_workers=num_workers,
+                    pin_memory=True,
+                ),
+                name=os.path.basename(config.dataset.test_path),
+            )
+        ]
 
     hypernetwork = RavelInterpretorHypernetwork(config, device)
 

@@ -1,22 +1,24 @@
+from cgi import test
 import json
 import os
 import warnings
 from math import ceil
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 import matplotlib.pyplot as plt
 import seaborn as sns
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import wandb
 from omegaconf import DictConfig, OmegaConf
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
-import wandb
 from logger import get_logger
 
 from ..das_utils import QuasiProjectiveIntervention
+from ..utils import NamedDataLoader
 from .modules import LlamaInterpretor, LlamaInterpretorConfig
 
 logger = get_logger(__name__)
@@ -494,7 +496,12 @@ class RavelInterpretorHypernetwork(nn.Module):
         return fig, axes
 
     @torch.no_grad()
-    def eval_accuracy(self, test_loader, inference_mode=None, eval_n_label_tokens=None):
+    def eval_accuracy(
+        self,
+        test_loaders: List[NamedDataLoader],
+        inference_mode=None,
+        eval_n_label_tokens=None,
+    ):
         assert inference_mode in [
             None,
             "column_argmax",
@@ -503,101 +510,118 @@ class RavelInterpretorHypernetwork(nn.Module):
             "bidding_argmax",
         ]
 
+        per_dataset_accuracies = {}
+        per_dataset_test_loss = {}
+        per_dataset_correct_idxs = {}
+
         self.interpretor.eval()
-        test_loss = []
-        correct_idxs = []
-        is_causal = []
 
-        for batch_id, batch in tqdm(
-            enumerate(test_loader),
-            desc="Evaluating accuracy",
-            total=self.max_eval_steps if self.max_eval_steps > 0 else len(test_loader),
-        ):
-            # Move entire batch to GPU once
-            batch = {k: v.to("cuda") for k, v in batch.items()}
+        for test_loader in test_loaders:
+            test_loss = []
+            correct_idxs = []
+            is_causal = []
 
-            if inference_mode == "groundtruth":
-                intervention_weight = torch.zeros(
-                    len(batch["editor_input_ids"]),
-                    batch["source_input_ids"].shape[1] + 1,
-                    batch["base_input_ids"].shape[1],
-                    device=batch["editor_input_ids"].device,
-                )
-                intervention_weight[:, -1, :] = 1.0
-
-                for i in range(len(batch["base_entity_position_ids"])):
-                    intervention_weight[i, -1, batch["base_entity_position_ids"][i]] = (
-                        0.0
-                    )
-                    intervention_weight[
-                        i,
-                        batch["source_entity_position_ids"][i],
-                        batch["base_entity_position_ids"][i],
-                    ] = 1.0
-            else:
-                intervention_weight = None
-
-            predictions = self.forward(
-                editor_input_ids=batch["editor_input_ids"],
-                base_input_ids=batch["base_input_ids"],
-                base_attention_mask=batch["base_attention_mask"],
-                base_intervention_mask=batch["base_intervention_mask"],
-                source_input_ids=batch["source_input_ids"],
-                source_attention_mask=batch["source_attention_mask"],
-                source_intervention_mask=batch["source_intervention_mask"],
-                labels=batch["labels"],
-                inference_mode=inference_mode,
-                intervention_weight=intervention_weight,
-            )
-            test_loss.append(predictions["loss"].item())
-            if isinstance(self.interpretor.das_module, QuasiProjectiveIntervention):
-                self.interpretor.zero_penalty()
-
-            batch_pred_ids = torch.argmax(predictions["logits"], dim=-1)
-
-            is_causal.extend(batch["is_causal"].cpu().numpy().tolist())
-
-            for i, (label, pred_ids) in enumerate(
-                zip(batch["labels"].to("cuda"), batch_pred_ids)
+            for batch_id, batch in tqdm(
+                enumerate(test_loader.data_loader),
+                desc="Evaluating accuracy",
+                total=self.max_eval_steps
+                if self.max_eval_steps > 0
+                else len(test_loader.data_loader),
             ):
-                label_idx = label != -100
-                output_idx = torch.zeros_like(label_idx)
-                output_idx[:-1] = label_idx[1:]
+                # Move entire batch to GPU once
+                batch = {k: v.to("cuda") for k, v in batch.items()}
 
-                label = label[label_idx]
-                pred_ids = pred_ids[output_idx]
+                if inference_mode == "groundtruth":
+                    intervention_weight = torch.zeros(
+                        len(batch["editor_input_ids"]),
+                        batch["source_input_ids"].shape[1] + 1,
+                        batch["base_input_ids"].shape[1],
+                        device=batch["editor_input_ids"].device,
+                    )
+                    intervention_weight[:, -1, :] = 1.0
 
-                if eval_n_label_tokens is not None and len(label) > eval_n_label_tokens:
-                    label = label[:eval_n_label_tokens]
-                    pred_ids = pred_ids[:eval_n_label_tokens]
+                    for i in range(len(batch["base_entity_position_ids"])):
+                        intervention_weight[
+                            i, -1, batch["base_entity_position_ids"][i]
+                        ] = 0.0
+                        intervention_weight[
+                            i,
+                            batch["source_entity_position_ids"][i],
+                            batch["base_entity_position_ids"][i],
+                        ] = 1.0
+                else:
+                    intervention_weight = None
 
-                is_correct = (torch.sum(label == pred_ids) == torch.numel(label)).item()
-                if is_correct:
-                    correct_idxs.append(batch_id * len(batch["labels"]) + i)
+                predictions = self.forward(
+                    editor_input_ids=batch["editor_input_ids"],
+                    base_input_ids=batch["base_input_ids"],
+                    base_attention_mask=batch["base_attention_mask"],
+                    base_intervention_mask=batch["base_intervention_mask"],
+                    source_input_ids=batch["source_input_ids"],
+                    source_attention_mask=batch["source_attention_mask"],
+                    source_intervention_mask=batch["source_intervention_mask"],
+                    labels=batch["labels"],
+                    inference_mode=inference_mode,
+                    intervention_weight=intervention_weight,
+                )
+                test_loss.append(predictions["loss"].item())
+                if isinstance(self.interpretor.das_module, QuasiProjectiveIntervention):
+                    self.interpretor.zero_penalty()
 
-            if self.max_eval_steps > 0 and batch_id + 1 > self.max_eval_steps:
-                break
+                batch_pred_ids = torch.argmax(predictions["logits"], dim=-1)
 
-        total_causal = sum(is_causal)
-        total_isolate = len(is_causal) - total_causal
+                is_causal.extend(batch["is_causal"].cpu().numpy().tolist())
 
-        correct_causal = sum([is_causal[i] for i in correct_idxs])
-        correct_isolate = len(correct_idxs) - correct_causal
+                for i, (label, pred_ids) in enumerate(
+                    zip(batch["labels"].to("cuda"), batch_pred_ids)
+                ):
+                    label_idx = label != -100
+                    output_idx = torch.zeros_like(label_idx)
+                    output_idx[:-1] = label_idx[1:]
 
-        causal_acc = correct_causal / total_causal if total_causal > 0 else 0.0
-        isolate_acc = correct_isolate / total_isolate if total_isolate > 0 else 0.0
+                    label = label[label_idx]
+                    pred_ids = pred_ids[output_idx]
 
-        disentangle_acc = (
-            0.5 * (causal_acc + isolate_acc) if total_isolate > 0 else causal_acc
-        )
+                    if (
+                        eval_n_label_tokens is not None
+                        and len(label) > eval_n_label_tokens
+                    ):
+                        label = label[:eval_n_label_tokens]
+                        pred_ids = pred_ids[:eval_n_label_tokens]
 
-        accuracies = {
-            "causal": causal_acc,
-            "isolate": isolate_acc,
-            "disentangle": disentangle_acc,
-        }
+                    is_correct = (
+                        torch.sum(label == pred_ids) == torch.numel(label)
+                    ).item()
+                    if is_correct:
+                        correct_idxs.append(batch_id * len(batch["labels"]) + i)
 
-        return accuracies, sum(test_loss) / len(test_loss), correct_idxs
+                if self.max_eval_steps > 0 and batch_id + 1 > self.max_eval_steps:
+                    break
+
+            total_causal = sum(is_causal)
+            total_isolate = len(is_causal) - total_causal
+
+            correct_causal = sum([is_causal[i] for i in correct_idxs])
+            correct_isolate = len(correct_idxs) - correct_causal
+
+            causal_acc = correct_causal / total_causal if total_causal > 0 else 0.0
+            isolate_acc = correct_isolate / total_isolate if total_isolate > 0 else 0.0
+
+            disentangle_acc = (
+                0.5 * (causal_acc + isolate_acc) if total_isolate > 0 else causal_acc
+            )
+
+            accuracies = {
+                "causal": causal_acc,
+                "isolate": isolate_acc,
+                "disentangle": disentangle_acc,
+            }
+
+            per_dataset_accuracies[test_loader.name] = accuracies
+            per_dataset_test_loss[test_loader.name] = sum(test_loss) / len(test_loss)
+            per_dataset_correct_idxs[test_loader.name] = correct_idxs
+
+        return per_dataset_accuracies, per_dataset_test_loss, per_dataset_correct_idxs
 
     def _intervention_number(self, intervention_weight, mean=True):
         p = intervention_weight[:, :-1, :]
@@ -663,7 +687,7 @@ class RavelInterpretorHypernetwork(nn.Module):
     def run_train(
         self,
         train_loader,
-        test_loader=None,
+        test_loader: Optional[NamedDataLoader | List[NamedDataLoader]] = None,
         inference_modes=None,  # Will use config.model.inference_modes if None
         epochs=None,  # Will use config.training.n_epochs if None
         steps=None,  # Will use config.training.n_steps if None
@@ -785,7 +809,6 @@ class RavelInterpretorHypernetwork(nn.Module):
                     if eval_per_steps is not None:
                         if cur_steps % eval_per_steps == 0:
                             # Evaluate the model
-
                             for mode in inference_modes:
                                 accuracies, test_loss, _ = self.eval_accuracy(
                                     test_loader,
@@ -795,28 +818,36 @@ class RavelInterpretorHypernetwork(nn.Module):
 
                                 text_mode = "default" if mode is None else mode
 
-                                causal_acc = accuracies["causal"]
-                                isolate_acc = accuracies["isolate"]
-                                disentangle_acc = accuracies["disentangle"]
+                                for loader in test_loader:
+                                    causal_acc = accuracies[loader.name]["causal"]
+                                    isolate_acc = accuracies[loader.name]["isolate"]
+                                    disentangle_acc = accuracies[loader.name][
+                                        "disentangle"
+                                    ]
 
-                                if wandb.run:
-                                    wandb.log(
-                                        {
-                                            f"{text_mode}_test_average_loss": test_loss,
-                                            f"{text_mode}_causal_accuracy": causal_acc,
-                                            f"{text_mode}_isolate_accuracy": isolate_acc,
-                                            f"{text_mode}_disentangle_accuracy": disentangle_acc,
-                                        }
+                                    if wandb.run:
+                                        wandb.log(
+                                            {
+                                                f"{loader.name}/{text_mode}_test_average_loss": test_loss,
+                                                f"{loader.name}/{text_mode}_causal_accuracy": causal_acc,
+                                                f"{loader.name}/{text_mode}_isolate_accuracy": isolate_acc,
+                                                f"{loader.name}/{text_mode}_disentangle_accuracy": disentangle_acc,
+                                            }
+                                        )
+
+                                    logger.info(
+                                        "[%s] Under Inference Mode: %s",
+                                        loader.name,
+                                        text_mode,
                                     )
-
-                                logger.info("Under Inference Mode: %s", text_mode)
-                                logger.info(
-                                    "Disentangle Acc: %.4f, Causal Acc: %.4f, Isolate Acc: %.4f, Test Loss: %.4f",
-                                    disentangle_acc,
-                                    causal_acc,
-                                    isolate_acc,
-                                    test_loss,
-                                )
+                                    logger.info(
+                                        "[%s] Disentangle Acc: %.4f, Causal Acc: %.4f, Isolate Acc: %.4f, Test Loss: %.4f",
+                                        loader.name,
+                                        disentangle_acc,
+                                        causal_acc,
+                                        isolate_acc,
+                                        test_loss[loader.name],
+                                    )
 
                     if checkpoint_per_steps is not None:
                         if (
