@@ -22,9 +22,20 @@ You will need a Github Personal Access Token with the `read:packages` and `write
 The container starts a local Ray cluster, to which you can submit & queue GPU jobs from within the Docker container.
 The script will expose an SSH tunnel to the remote machine, allowing you to access the Ray dashboard at `http://localhost:8765` to monitor job status. It will sync code, SSH keys, and secrets to the remote machine, and pull the latest image from GHCR & start the container.
 
+1. Install `mltoolbox` and launch the container on the remote:
+
 ```bash
-./scripts/setup_lambda.sh <instance-ip>
+pip install git+https://github.com/sidnb13/toolbox
+mltoolbox remote connect <remote_ip> --username <username> --mode container
 ```
+
+2. Use `hydra-ray-jobs-launcher` (already installed in the container and enabled in config as default) to launch jobs:
+
+```bash
+python train.py experiment=<experiment_name>/<experiment_config>
+```
+
+Check out `http://localhost:8266/` for the dashboard to monitor the jobs.
 
 4. Launching jobs:
 
