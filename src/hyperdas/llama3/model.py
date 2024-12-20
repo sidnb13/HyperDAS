@@ -1,10 +1,8 @@
-from cgi import test
 import json
 import os
 import warnings
 from math import ceil
 from typing import Dict, List, Optional
-
 import matplotlib.pyplot as plt
 import seaborn as sns
 import torch
@@ -18,7 +16,7 @@ from transformers import AutoTokenizer
 from logger import get_logger
 
 from ..das_utils import QuasiProjectiveIntervention
-from ..utils import NamedDataLoader
+from ..utils import InterpretorModelOutput, NamedDataLoader
 from .modules import LlamaInterpretor, LlamaInterpretorConfig
 
 logger = get_logger(__name__)
@@ -128,27 +126,25 @@ class RavelInterpretorHypernetwork(nn.Module):
 
     def forward(
         self,
-        editor_input_ids: torch.Tensor,
-        base_input_ids: torch.Tensor,
-        base_attention_mask: torch.Tensor,
-        base_intervention_mask: torch.Tensor,
-        source_input_ids: torch.Tensor,
-        source_attention_mask: torch.Tensor,
-        source_intervention_mask: torch.Tensor,
-        labels: Optional[torch.Tensor] = None,
+        editor_input_ids: torch.Tensor = None,
+        base_input_ids: torch.Tensor = None,
+        base_attention_mask: torch.Tensor = None,
+        base_intervention_mask: torch.Tensor = None,
+        source_input_ids: torch.Tensor = None,
+        source_attention_mask: torch.Tensor = None,
+        source_intervention_mask: torch.Tensor = None,
+        labels: torch.Tensor = None,
         output_intervention_weight: bool = True,
-        is_causal: Optional[torch.Tensor] = None,
+        is_causal: torch.Tensor = None,
         causal_loss_weight: float = 1.0,
         iso_loss_weight: float = 1.0,
-        intervention_weight: Optional[torch.Tensor] = None,
-        inference_mode: Optional[str] = None,
-        return_basis: bool = False,
+        source_intervention_weight: torch.Tensor = None,
+        base_intervention_weight: torch.Tensor = None,
     ) -> Dict[str, torch.Tensor]:
-        _pred = self.interpretor(
+        _pred: InterpretorModelOutput = self.interpretor(
             editor_input_ids=editor_input_ids,
-            editor_attention_mask=(
-                editor_input_ids != self.interpretor_config.eos_token_id
-            ),
+            editor_attention_mask=editor_input_ids
+            != self.interpretor_config.eos_token_id,
             base_input_ids=base_input_ids,
             base_attention_mask=base_attention_mask,
             base_intervention_mask=base_intervention_mask,
@@ -156,9 +152,8 @@ class RavelInterpretorHypernetwork(nn.Module):
             source_attention_mask=source_attention_mask,
             source_intervention_mask=source_intervention_mask,
             output_intervention_weight=output_intervention_weight,
-            intervention_weight=intervention_weight,
-            inference_mode=inference_mode,
-            return_basis=return_basis,
+            source_intervention_weight=source_intervention_weight,
+            base_intervention_weight=base_intervention_weight,
         )
 
         if labels is not None:
@@ -286,16 +281,14 @@ class RavelInterpretorHypernetwork(nn.Module):
                     correct_idxs.append(i)
                 correct += is_correct
 
-        intervention_weight = predictions.intervention_weight
-        batch_intervention_entropy = self._intervention_entropy(
-            intervention_weight, mean=False
-        )
+        source_intervention_weight = predictions.source_intervention_weight
+        base_intervention_weight = predictions.base_intervention_weight
 
         return_dict = {
             "batch_output": batch_output,
             "batch_full_output": batch_full_output,
-            "batch_intervention_weight": intervention_weight,
-            "batch_intervention_entropy": batch_intervention_entropy,
+            "batch_source_intervention_weight": source_intervention_weight,
+            "batch_base_intervention_weight": base_intervention_weight,
             "n_correct": correct,
             "correct_idxs": correct_idxs,
         }
@@ -306,7 +299,6 @@ class RavelInterpretorHypernetwork(nn.Module):
         data_loader,
         idxs,
         batch_size=4,
-        inference_mode=None,
         annot=True,
         indicate_masked_tokens=False,
         digits=2,
@@ -323,9 +315,6 @@ class RavelInterpretorHypernetwork(nn.Module):
             if i == batch_id:
                 break
 
-        plot_multiple_modes = (
-            isinstance(inference_mode, list) and len(inference_mode) > 1
-        )
         editor_input_ids = batch["editor_input_ids"][example_id]
         base_input_ids = batch["base_input_ids"][example_id]
         source_input_ids = batch["source_input_ids"][example_id]
@@ -342,18 +331,10 @@ class RavelInterpretorHypernetwork(nn.Module):
             source_intervention_mask = batch["source_intervention_mask"][example_id]
             base_intervention_mask = base_intervention_mask[~base_padding_idx]
             source_intervention_mask = source_intervention_mask[~source_padding_idx]
-            source_intervention_mask = torch.cat(
-                [source_intervention_mask, torch.tensor([True])]
-            )
 
         # Add a False value to the end of the source_padding_idx to account for the [SELF] token
-        intervention_weight_source_padding_idx = torch.cat(
-            [source_padding_idx, torch.tensor([False])]
-        )
 
-        source_axis = [self.tokenizer.decode([i]) for i in source_input_ids] + [
-            "[SELF]"
-        ]
+        source_axis = [self.tokenizer.decode([i]) for i in source_input_ids]
         base_axis = [self.tokenizer.decode([i]) for i in base_input_ids]
 
         for axis in [source_axis, base_axis]:
@@ -406,7 +387,6 @@ class RavelInterpretorHypernetwork(nn.Module):
                             child.set_text("1")
 
             # Render the cell at (0, 0) with black background
-
             if contain_title:
                 ax.set_title(
                     f"Instruction: {editor_text}     Label: {label}    Pred: {prediction}"
@@ -419,79 +399,60 @@ class RavelInterpretorHypernetwork(nn.Module):
             ax.set_xlabel("Base Sentence Tokens")
             ax.set_ylabel("Counterfactual Sentence Tokens")
 
-        def process_intervention_weight(intervention_weight):
-            intervention_weight = intervention_weight[
-                ~intervention_weight_source_padding_idx, :
-            ]
-            intervention_weight = intervention_weight[:, ~base_padding_idx]
-            return intervention_weight
-
-        if not plot_multiple_modes:
-            inference_mode = (
-                inference_mode[0]
-                if isinstance(inference_mode, list)
-                else inference_mode
-            )
-            results = self.inspect_batch_prediction_ouptuts(
-                batch, inference_mode=inference_mode, eval_n_label_tokens=3
-            )
-            predictions = results["batch_output"][example_id]
-            intervention_weight = results["batch_intervention_weight"][example_id]
-        else:
-            results = []
-            for mode in inference_mode:
-                result = self.inspect_batch_prediction_ouptuts(
-                    batch, inference_mode=mode, eval_n_label_tokens=3
-                )
-                results.append(result)
-
-            predictions = [r["batch_output"][example_id] for r in results]
-            intervention_weight = [
-                r["batch_intervention_weight"][example_id] for r in results
-            ]
+        results = self.inspect_batch_prediction_ouptuts(batch, eval_n_label_tokens=3)
+        predictions = results["batch_output"][example_id]
+        source_intervention_weight = results["batch_source_intervention_weight"][
+            example_id
+        ]
+        base_intervention_weight = results["batch_base_intervention_weight"][example_id]
 
         # set background color to be grey
-        if plot_multiple_modes:
-            style = sns.axes_style("dark")
-            style["axes.facecolor"] = "#100a17"
 
-            sns.set(style=style, font_scale=3)
-            intervention_weight = [
-                process_intervention_weight(iw) for iw in intervention_weight
-            ]
+        style = sns.axes_style("dark")
+        style["axes.facecolor"] = "#100a17"
 
-            if axes is not None:
-                assert len(axes) == len(inference_mode)
-            else:
-                fig, axes = plt.subplots(
-                    1, len(inference_mode), figsize=(10 + 15 * len(inference_mode), 15)
-                )
+        sns.set(style=style, font_scale=font_scale)
+        if axes is None:
+            fig, axes = plt.subplots(2, 1, figsize=(15, 4))
 
-            for i, ax in enumerate(axes):
-                plot_inference_model(
-                    ax=ax,
-                    intervention_weight=intervention_weight.pop(0),
-                    prediction=predictions.pop(0),
-                )
+        source_intervention_weight = source_intervention_weight[
+            ~source_padding_idx
+        ].unsqueeze(0)
 
-                if i != 0:
-                    ax.set_ylabel("")  # remove y-axis label for all but the first plot
+        base_intervention_weight = base_intervention_weight[
+            ~base_padding_idx
+        ].unsqueeze(0)
+        source_intervention_mask = (source_intervention_mask == 0).unsqueeze(0)
+        base_intervention_mask = (base_intervention_mask == 0).unsqueeze(0)
 
-                if i != len(axes) - 1:
-                    # remove the heatmap colorbar for all but the last plot
-                    ax.collections[0].colorbar.remove()
+        sns.heatmap(
+            source_intervention_weight.float().cpu().numpy(),
+            xticklabels=source_axis,
+            ax=axes[0],
+            annot=annot,
+            fmt=f".{digits}f",
+            mask=source_intervention_mask.float().cpu().numpy(),
+        )
+        sns.heatmap(
+            base_intervention_weight.float().cpu().numpy(),
+            xticklabels=base_axis,
+            ax=axes[1],
+            annot=annot,
+            fmt=f".{digits}f",
+            mask=base_intervention_mask.float().cpu().numpy(),
+        )
 
-        else:
-            style = sns.axes_style("dark")
-            style["axes.facecolor"] = "#100a17"
+        axes[0].set_yticklabels([""])
+        axes[1].set_yticklabels([""])
 
-            sns.set(style=style, font_scale=font_scale)
-            intervention_weight = process_intervention_weight(intervention_weight)
-            if axes is None:
-                fig, axes = plt.subplots(figsize=(15, 15))
-            plot_inference_model(
-                ax=axes, intervention_weight=intervention_weight, prediction=predictions
-            )
+        axes[0].set_ylabel("Source Sentence")
+        axes[1].set_ylabel("Base Sentence")
+
+        axes[0].set_title(
+            f"Instruction: {editor_text}     Label: {label}    Pred: {predictions}"
+        )
+
+        plt.subplots_adjust(hspace=1)
 
         return fig, axes
 
@@ -688,49 +649,24 @@ class RavelInterpretorHypernetwork(nn.Module):
         self,
         train_loader,
         test_loader: Optional[NamedDataLoader | List[NamedDataLoader]] = None,
-        inference_modes=None,  # Will use config.model.inference_modes if None
-        epochs=None,  # Will use config.training.n_epochs if None
-        steps=None,  # Will use config.training.n_steps if None
-        eval_per_steps: int = None,  # Will use config.training.eval_per_steps if None
-        checkpoint_per_steps: int = None,  # Will use config.training.checkpoint_per_steps if None
-        save_dir=None,  # Will use config.training.save_dir if None
-        save_model=None,  # Will use config.training.save_model if None
-        debug_model=None,  # Will use config.training.debug_model if None
-        run_name=None,  # Will use config.wandb.run_name if None
     ):
-        # Use config values as defaults
-        inference_modes = inference_modes or self.config.model.inference_modes
-        epochs = epochs or self.config.training.n_epochs
-        steps = steps or self.config.training.n_steps
-        eval_per_steps = eval_per_steps or self.config.training.eval_per_steps
-        checkpoint_per_steps = (
-            checkpoint_per_steps or self.config.training.checkpoint_per_steps
-        )
-        save_dir = save_dir or self.config.training.save_dir
-        save_model = (
-            save_model if save_model is not None else self.config.training.save_model
-        )
-        debug_model = (
-            debug_model if debug_model is not None else self.config.training.debug_model
-        )
-        run_name = run_name or self.config.wandb.run_name
-
-        # Loss configs
-        apply_source_selection_sparsity_loss = (
-            self.config.loss.source_selection_sparsity_loss
-        )
-        sparsity_loss_weight_start = self.config.loss.sparsity.weight_start
-        sparsity_loss_weight_end = self.config.loss.sparsity.weight_end
-        sparsity_loss_warm_up_ratio = self.config.loss.sparsity.warm_up_ratio
-        schedule_sparsity_loss = self.config.loss.sparsity.get("schedule", True)
+        inference_modes = self.config.model.inference_modes
+        epochs = self.config.training.n_epochs
+        steps = self.config.training.n_steps
+        eval_per_steps = self.config.training.eval_per_steps
+        checkpoint_per_steps = self.config.training.checkpoint_per_steps
+        save_dir = self.config.training.save_dir
+        save_model = self.config.training.save_model
+        debug_model = self.config.training.debug_model
+        run_name = self.config.wandb.run_name
         causal_loss_weight = self.config.loss.causal_loss_weight
         iso_loss_weight = self.config.loss.iso_loss_weight
         target_intervention_num = self.config.loss.get("target_intervention_num", None)
-
-        # Training configs
         lr = self.config.training.lr
         weight_decay = self.config.training.weight_decay
         max_grad_norm = self.config.training.max_grad_norm
+        sparsity_loss = self.config.loss.sparsity.apply
+        sparsity_loss_weight = self.config.loss.sparsity.weight
 
         os.makedirs(os.path.join(save_dir, run_name), exist_ok=True)
         OmegaConf.save(self.config, os.path.join(save_dir, run_name, "config.yaml"))
@@ -775,21 +711,6 @@ class RavelInterpretorHypernetwork(nn.Module):
             self.interpretor.das_module.set_temperature(
                 das_temperature_schedule[cur_steps]
             )
-
-        # Create a scheduler for the sparsity loss that is very small at the beginning from sparsity_loss_weight_start and increases to the sparsity_loss_weight_end
-        # over the course of the training. Before sparsity_loss_warm_up_ratio * total_steps steps, the sparsity loss is not applied.
-        if schedule_sparsity_loss:
-            warm_up_steps = int(sparsity_loss_warm_up_ratio * total_steps)
-            sparsity_loss_schedule = (
-                torch.linspace(
-                    sparsity_loss_weight_start,
-                    sparsity_loss_weight_end,
-                    total_steps + 1,
-                )
-                .to(self.interpretor_config.torch_dtype)
-                .to("cuda")
-            )
-            sparsity_loss_schedule[:warm_up_steps] = 0.0
 
         for epoch in range(epochs):
             # Create a tqdm progress bar
@@ -943,24 +864,25 @@ class RavelInterpretorHypernetwork(nn.Module):
                     prediction_loss = prediction["loss"]
                     training_loss += prediction_loss
 
-                    if apply_source_selection_sparsity_loss:
-                        source_selection_sparsity_loss = self._intervention_entropy(
-                            prediction.intervention_weight
+                    if sparsity_loss:
+                        source_intervention_weight = prediction[
+                            "source_intervention_weight"
+                        ]
+                        base_intervention_weight = prediction[
+                            "base_intervention_weight"
+                        ]
+
+                        source_entropy = self._entropy(
+                            source_intervention_weight, mean=True
+                        )
+                        base_entropy = self._entropy(
+                            base_intervention_weight, mean=True
                         )
 
-                        step_sparsity_loss_weight = sparsity_loss_schedule[cur_steps]
-                        training_loss += (
-                            step_sparsity_loss_weight * source_selection_sparsity_loss
+                        sparsity_loss = sparsity_loss_weight * (
+                            source_entropy + base_entropy
                         )
-
-                    if isinstance(
-                        self.interpretor.das_module, QuasiProjectiveIntervention
-                    ):
-                        penalty = self.interpretor.get_penalty()
-                        training_loss += penalty
-                        self.interpretor.zero_penalty()
-                    else:
-                        penalty = None
+                        training_loss += sparsity_loss
 
                     if target_intervention_num is not None:
                         assert isinstance(target_intervention_num, int)
@@ -1003,27 +925,10 @@ class RavelInterpretorHypernetwork(nn.Module):
                             intervention_number_loss.item()
                         )
 
-                    if penalty is not None:
-                        metrics["train_batch_penalty"] = (
-                            penalty.item()
-                            if isinstance(penalty, torch.Tensor)
-                            else penalty
-                        )
-
                     if wandb.run:
                         wandb.log(metrics)
                     if cur_steps % 5 == 0:
                         output_metrics = {**metrics}
-                        if apply_source_selection_sparsity_loss:
-                            output_metrics["sparsity_weight"] = (
-                                step_sparsity_loss_weight.item()
-                            )
-                            if penalty is not None:
-                                output_metrics["train_batch_penalty"] = (
-                                    penalty.item()
-                                    if isinstance(penalty, torch.Tensor)
-                                    else penalty
-                                )
 
                         logger.info(output_metrics)
 

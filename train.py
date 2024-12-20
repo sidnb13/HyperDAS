@@ -133,19 +133,7 @@ def run_experiment(
         logger.info(f"Loading model from {config.training.load_trained_from}")
         hypernetwork.load_model(config.training.load_trained_from)
 
-    hypernetwork.run_train(
-        train_loader=train_data_loader,
-        test_loader=test_data_loader,
-        inference_modes=config.model.inference_modes,
-        epochs=config.training.n_epochs,
-        steps=config.training.n_steps,
-        eval_per_steps=config.training.eval_per_steps,
-        checkpoint_per_steps=config.training.checkpoint_per_steps,
-        save_dir=config.training.save_dir,
-        save_model=config.training.save_model,
-        debug_model=config.training.debug_model,
-        run_name=config.wandb_config.run_name,
-    )
+    hypernetwork.run_train(train_loader=train_data_loader, test_loader=test_data_loader)
 
     if config.wandb_config.log:
         wandb.finish()

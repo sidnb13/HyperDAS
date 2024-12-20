@@ -31,10 +31,8 @@ loss:
   return_penalty: false
   sparsity:
     apply: true
-    schedule: true
-    weight_start: 0.5
-    weight_end: 1.5
-    warm_up_ratio: 0.3
+    weight: 1.0
+
 
 wandb_config:
   group: ridge_dynamic_country_baseline
