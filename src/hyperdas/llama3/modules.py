@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import warnings
+from dataclasses import dataclass
 from typing import Any, List, Literal, Mapping, Optional, Tuple, TypeVar, Union
 
 import torch
@@ -39,6 +40,43 @@ logger = get_logger(__name__)
 
 
 T = TypeVar("T", bound="LlamaInterpretor")
+
+
+@dataclass
+class HyperDASModelOutputWithCrossAttentions(BaseModelOutputWithPast):
+    """
+    Base class for model's outputs, with potential hidden states and attentions.
+
+    Args:
+        last_hidden_state (`torch.FloatTensor` of shape `(batch_size, sequence_length, hidden_size)`):
+            Sequence of hidden-states at the output of the last layer of the model.
+        hidden_states (`tuple(torch.FloatTensor)`, *optional*, returned when `output_hidden_states=True` is passed or when `config.output_hidden_states=True`):
+            Tuple of `torch.FloatTensor` (one for the output of the embeddings, if the model has an embedding layer, +
+            one for the output of each layer) of shape `(batch_size, sequence_length, hidden_size)`.
+
+            Hidden-states of the model at the output of each layer plus the optional initial embedding outputs.
+        attentions (`tuple(torch.FloatTensor)`, *optional*, returned when `output_attentions=True` is passed or when `config.output_attentions=True`):
+            Tuple of `torch.FloatTensor` (one for each layer) of shape `(batch_size, num_heads, sequence_length,
+            sequence_length)`.
+
+            Attentions weights after the attention softmax, used to compute the weighted average in the self-attention
+            heads.
+        cross_attentions (`tuple(torch.FloatTensor)`, *optional*, returned when `output_attentions=True` and `config.add_cross_attention=True` is passed or when `config.output_attentions=True`):
+            Tuple of `torch.FloatTensor` (one for each layer) of shape `(batch_size, num_heads, sequence_length,
+            sequence_length)`.
+
+            Attentions weights of the decoder's cross-attention layer, after the attention softmax, used to compute the
+            weighted average in the cross-attention heads.
+    """
+
+    last_hidden_state: torch.FloatTensor = None
+    last_source_hidden_state: torch.FloatTensor = None
+    last_base_hidden_state: torch.FloatTensor = None
+    hidden_states: Optional[Tuple[torch.FloatTensor, ...]] = None
+    source_hidden_states: Optional[Tuple[torch.FloatTensor, ...]] = None
+    base_hidden_states: Optional[Tuple[torch.FloatTensor, ...]] = None
+    attentions: Optional[Tuple[torch.FloatTensor, ...]] = None
+    cross_attentions: Optional[Tuple[torch.FloatTensor, ...]] = None
 
 
 class LlamaInterpretorConfig(LlamaConfig):
@@ -82,10 +120,10 @@ class LlamaModelWithCrossAttention(LlamaModel):
         self,
         input_ids: torch.LongTensor = None,
         attention_mask: Optional[torch.Tensor] = None,
-        source_hidden_states: Optional[torch.Tensor] = None,
-        source_attention_mask: Optional[torch.FloatTensor] = None,
-        base_hidden_states: Optional[torch.Tensor] = None,
-        base_attention_mask: Optional[torch.FloatTensor] = None,
+        source_encoder_hidden_states: Optional[torch.Tensor] = None,
+        source_encoder_attention_mask: Optional[torch.FloatTensor] = None,
+        base_encoder_hidden_states: Optional[torch.Tensor] = None,
+        base_encoder_attention_mask: Optional[torch.FloatTensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
         past_key_values: Optional[List[torch.FloatTensor]] = None,
         inputs_embeds: Optional[torch.FloatTensor] = None,
@@ -147,96 +185,77 @@ class LlamaModelWithCrossAttention(LlamaModel):
 
         # embed positions
         hidden_states = inputs_embeds
+        base_hidden_states = inputs_embeds
+        source_hidden_states = inputs_embeds
 
         # decoder layers
         all_hidden_states = () if output_hidden_states else None
+        all_base_hidden_states = () if output_hidden_states else None
+        all_source_hidden_states = () if output_hidden_states else None
         all_self_attns = () if output_attentions else None
         next_decoder_cache = None
 
         for decoder_layer in self.layers:
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
+                all_base_hidden_states += (base_hidden_states,)
+                all_source_hidden_states += (source_hidden_states,)
 
             if self.gradient_checkpointing and self.training:
-                if isinstance(decoder_layer, LlamaDecoderLayerWithDoubleCrossAttention):
-                    layer_outputs = self._gradient_checkpointing_func(
-                        decoder_layer.__call__,
-                        hidden_states,
-                        causal_mask,
-                        source_hidden_states,
-                        source_attention_mask,
-                        base_hidden_states,
-                        base_attention_mask,
-                        position_ids,
-                        past_key_values,
-                        output_attentions,
-                        use_cache,
-                        cache_position,
-                    )
-                else:
-                    layer_outputs = self._gradient_checkpointing_func(
-                        decoder_layer.__call__,
-                        hidden_states,
-                        causal_mask,
-                        position_ids,
-                        past_key_values,
-                        output_attentions,
-                        use_cache,
-                        cache_position,
-                    )
+                layer_outputs = self._gradient_checkpointing_func(
+                    decoder_layer.__call__,
+                    hidden_states,
+                    source_hidden_states,
+                    base_hidden_states,
+                    causal_mask,
+                    source_encoder_hidden_states,
+                    source_encoder_attention_mask,
+                    base_encoder_hidden_states,
+                    base_encoder_attention_mask,
+                    position_ids,
+                    past_key_values,
+                    output_attentions,
+                    use_cache,
+                    cache_position,
+                )
             else:
-                if isinstance(decoder_layer, LlamaDecoderLayerWithDoubleCrossAttention):
-                    layer_outputs = decoder_layer(
-                        hidden_states,
-                        attention_mask=causal_mask,
-                        source_hidden_states=source_hidden_states,
-                        source_attention_mask=source_attention_mask,
-                        base_hidden_states=base_hidden_states,
-                        base_attention_mask=base_attention_mask,
-                        position_ids=position_ids,
-                        past_key_value=past_key_values,
-                        output_attentions=output_attentions,
-                        use_cache=use_cache,
-                        cache_position=cache_position,
-                    )
-                else:
-                    layer_outputs = decoder_layer(
-                        hidden_states,
-                        attention_mask=causal_mask,
-                        source_hidden_states=source_hidden_states,
-                        source_attention_mask=source_attention_mask,
-                        base_hidden_states=base_hidden_states,
-                        base_attention_mask=base_attention_mask,
-                        position_ids=position_ids,
-                        past_key_value=past_key_values,
-                        output_attentions=output_attentions,
-                        use_cache=use_cache,
-                        cache_position=cache_position,
-                    )
-                    """
-                    layer_outputs = decoder_layer(
-                        hidden_states,
-                        attention_mask=causal_mask,
-                        position_ids=position_ids,
-                        past_key_value=past_key_values,
-                        output_attentions=output_attentions,
-                        use_cache=use_cache,
-                        cache_position=cache_position,
-                    )
-                    """
-            hidden_states = layer_outputs[0]
+                layer_outputs = decoder_layer(
+                    hidden_states,
+                    source_hidden_states=source_hidden_states,
+                    base_hidden_states=base_hidden_states,
+                    attention_mask=causal_mask,
+                    source_encoder_hidden_states=source_encoder_hidden_states,
+                    source_encoder_attention_mask=source_encoder_attention_mask,
+                    base_encoder_hidden_states=base_encoder_hidden_states,
+                    base_encoder_attention_mask=base_encoder_attention_mask,
+                    position_ids=position_ids,
+                    past_key_value=past_key_values,
+                    output_attentions=output_attentions,
+                    use_cache=use_cache,
+                    cache_position=cache_position,
+                )
+
+            hidden_states, base_hidden_states, source_hidden_states = (
+                layer_outputs[0],
+                layer_outputs[1],
+                layer_outputs[2],
+            )
 
             if use_cache:
-                next_decoder_cache = layer_outputs[2 if output_attentions else 1]
+                next_decoder_cache = layer_outputs[4 if output_attentions else 3]
 
             if output_attentions:
-                all_self_attns += (layer_outputs[1],)
+                all_self_attns += (layer_outputs[3],)
 
         hidden_states = self.norm(hidden_states)
+        source_hidden_states = self.norm(source_hidden_states)
+        base_hidden_states = self.norm(base_hidden_states)
 
         # add hidden states from the last decoder layer
         if output_hidden_states:
             all_hidden_states += (hidden_states,)
+            all_source_hidden_states += (source_hidden_states,)
+            all_base_hidden_states += (base_hidden_states,)
 
         next_cache = None
         if use_cache:
@@ -251,10 +270,15 @@ class LlamaModelWithCrossAttention(LlamaModel):
                 for v in [hidden_states, next_cache, all_hidden_states, all_self_attns]
                 if v is not None
             )
-        return BaseModelOutputWithPast(
+
+        return HyperDASModelOutputWithCrossAttentions(
             last_hidden_state=hidden_states,
+            last_source_hidden_state=source_hidden_states,
+            last_base_hidden_state=base_hidden_states,
             past_key_values=next_cache,
             hidden_states=all_hidden_states,
+            source_hidden_states=all_source_hidden_states,
+            base_hidden_states=all_base_hidden_states,
             attentions=all_self_attns,
         )
 
@@ -336,8 +360,6 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
                     layer.post_attention_layernorm.weight
                 )
 
-                # with torch.no_grad():
-                # Initialize the new layer with these parameters
                 self.model.layers[i].self_attn.q_proj.weight = nn.Parameter(
                     original_q_weights
                 )
@@ -351,43 +373,25 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
                     original_o_weights
                 )
 
-                if not self.config.ablate_source_token_attention:
-                    self.model.layers[i].source_cross_attn.q_proj.weight = nn.Parameter(
-                        original_q_weights
-                    )
-                    self.model.layers[i].source_cross_attn.k_proj.weight = nn.Parameter(
-                        original_k_weights
-                    )
-                    self.model.layers[i].source_cross_attn.v_proj.weight = nn.Parameter(
-                        original_v_weights
-                    )
-                    self.model.layers[i].source_cross_attn.o_proj.weight = nn.Parameter(
-                        original_o_weights
-                    )
-                    self.model.layers[
-                        i
-                    ].source_cross_attn_input_layernorm.weight = nn.Parameter(
-                        original_input_layernorm_weights
-                    )
+                self.model.layers[i].cross_attn.q_proj.weight = nn.Parameter(
+                    original_q_weights
+                )
+                self.model.layers[i].cross_attn.k_proj.weight = nn.Parameter(
+                    original_k_weights
+                )
+                self.model.layers[i].cross_attn.v_proj.weight = nn.Parameter(
+                    original_v_weights
+                )
+                self.model.layers[i].cross_attn.o_proj.weight = nn.Parameter(
+                    original_o_weights
+                )
 
-                if not self.config.ablate_base_token_attention:
-                    self.model.layers[i].base_cross_attn.q_proj.weight = nn.Parameter(
-                        original_q_weights
-                    )
-                    self.model.layers[i].base_cross_attn.k_proj.weight = nn.Parameter(
-                        original_k_weights
-                    )
-                    self.model.layers[i].base_cross_attn.v_proj.weight = nn.Parameter(
-                        original_v_weights
-                    )
-                    self.model.layers[i].base_cross_attn.o_proj.weight = nn.Parameter(
-                        original_o_weights
-                    )
-                    self.model.layers[
-                        i
-                    ].base_cross_attn_input_layernorm.weight = nn.Parameter(
-                        original_input_layernorm_weights
-                    )
+                self.model.layers[i].cross_attn_input_layernorm.weight = nn.Parameter(
+                    original_input_layernorm_weights
+                )
+                self.model.layers[i].post_cross_attn_layernorm.weight = nn.Parameter(
+                    original_post_attention_layernorm
+                )
 
                 if self.config.attention_bias:
                     original_q_bias = layer.self_attn.q_proj.bias
@@ -395,33 +399,18 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
                     original_v_bias = layer.self_attn.v_proj.bias
                     original_o_bias = layer.self_attn.o_proj.bias
 
-                    if not self.config.ablate_source_token_attention:
-                        self.model.layers[
-                            i
-                        ].source_cross_attn.q_proj.bias = nn.Parameter(original_q_bias)
-                        self.model.layers[
-                            i
-                        ].source_cross_attn.k_proj.bias = nn.Parameter(original_k_bias)
-                        self.model.layers[
-                            i
-                        ].source_cross_attn.v_proj.bias = nn.Parameter(original_v_bias)
-                        self.model.layers[
-                            i
-                        ].source_cross_attn.o_proj.bias = nn.Parameter(original_o_bias)
-
-                    if not self.config.ablate_base_token_attention:
-                        self.model.layers[i].base_cross_attn.q_proj.bias = nn.Parameter(
-                            original_q_bias
-                        )
-                        self.model.layers[i].base_cross_attn.k_proj.bias = nn.Parameter(
-                            original_k_bias
-                        )
-                        self.model.layers[i].base_cross_attn.v_proj.bias = nn.Parameter(
-                            original_v_bias
-                        )
-                        self.model.layers[i].base_cross_attn.o_proj.bias = nn.Parameter(
-                            original_o_bias
-                        )
+                    self.model.layers[i].cross_attn.q_proj.bias = nn.Parameter(
+                        original_q_bias
+                    )
+                    self.model.layers[i].cross_attn.k_proj.bias = nn.Parameter(
+                        original_k_bias
+                    )
+                    self.model.layers[i].cross_attn.v_proj.bias = nn.Parameter(
+                        original_v_bias
+                    )
+                    self.model.layers[i].cross_attn.o_proj.bias = nn.Parameter(
+                        original_o_bias
+                    )
 
                     self.model.layers[i].self_attn.q_proj.bias = nn.Parameter(
                         original_q_bias
@@ -443,6 +432,16 @@ class LlamaInterpretorHypernetwork(LlamaForCausalLM):
                     original_mlp_up_proj_weights
                 )
                 self.model.layers[i].mlp.down_proj.weight = nn.Parameter(
+                    original_mlp_down_proj_weights
+                )
+
+                self.model.layers[i].cross_attn_mlp.gate_proj.weight = nn.Parameter(
+                    original_mlp_gate_proj_weights
+                )
+                self.model.layers[i].cross_attn_mlp.up_proj.weight = nn.Parameter(
+                    original_mlp_up_proj_weights
+                )
+                self.model.layers[i].cross_attn_mlp.down_proj.weight = nn.Parameter(
                     original_mlp_down_proj_weights
                 )
 
@@ -771,7 +770,7 @@ class LlamaInterpretor(nn.Module):
         source_hidden_states = source_hidden_states / source_normalization_factors
 
         if (source_intervention_mask.sum(dim=-1) == 0).any():
-            tokenizer = AutoTokenizer.from_pretrained("/nlp/scr/sjd24/llama3-8b")
+            tokenizer = AutoTokenizer.from_pretrained("meta-llama/Meta-Llama-3-8B")
             zero_row_idx = (source_intervention_mask.sum(dim=-1) == 0).nonzero(
                 as_tuple=True
             )[0]
@@ -785,7 +784,7 @@ class LlamaInterpretor(nn.Module):
             warnings.warn(warning_msg)
 
         if (base_intervention_mask.sum(dim=-1) == 0).any():
-            tokenizer = AutoTokenizer.from_pretrained("/nlp/scr/sjd24/llama3-8b")
+            tokenizer = AutoTokenizer.from_pretrained("meta-llama/Meta-Llama-3-8B")
             zero_row_idx = (base_intervention_mask.sum(dim=-1) == 0).nonzero(
                 as_tuple=True
             )[0]

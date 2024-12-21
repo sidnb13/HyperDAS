@@ -150,24 +150,27 @@ def main(cfg: DictConfig):
         # Check if we're running in serial mode
         is_serial = os.environ.get("LAUNCH_MODE", "parallel") == "serial"
 
-        if is_serial:
-            # Use single GPU for serial mode
-            device = "cuda:0"
+        if cfg.device_mode == "mps":
+            device = "mps"
         else:
-            # Use distributed GPUs for parallel mode
-            num_gpus = torch.cuda.device_count()
-            try:
-                job_num = getattr(HydraConfig.get().job, "num", 0)
-            except Exception:
-                job_num = 0
-            gpu_id = job_num % num_gpus
-            device = f"cuda:{gpu_id}"
+            if is_serial:
+                # Use single GPU for serial mode
+                device = "cuda:0"
+            else:
+                # Use distributed GPUs for parallel mode
+                num_gpus = torch.cuda.device_count()
+                try:
+                    job_num = getattr(HydraConfig.get().job, "num", 0)
+                except Exception:
+                    job_num = 0
+                gpu_id = job_num % num_gpus
+                device = f"cuda:{gpu_id}"
 
         logger.info(
             f"Running in {'serial' if is_serial else 'parallel'} mode on device {device}"
         )
 
-        if not is_serial:
+        if not is_serial and cfg.device_mode == "cuda":
             torch.cuda.set_device(device)
 
         # Set seed
@@ -176,8 +179,9 @@ def main(cfg: DictConfig):
 
         run_experiment(cfg, device)
 
-        torch.cuda.empty_cache()
-        gc.collect()
+        if cfg.device_mode == "cuda":
+            torch.cuda.empty_cache()
+            gc.collect()
     except Exception as e:
         logger.error(f"An error occurred in hydra_main: {str(e)}", exc_info=True)
         raise

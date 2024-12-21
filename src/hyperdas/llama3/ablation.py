@@ -1,22 +1,21 @@
 import json
 import os
-import time
-from typing import Any, List, Mapping, Optional, Tuple, TypeVar, Union
+from typing import Any, Mapping, TypeVar
 
 import matplotlib.pyplot as plt
 import seaborn as sns
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import wandb
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
+
+import wandb
 
 from ..das_utils import (
     BoundlessRotatedSpaceIntervention,
     LowRankRotatedSpaceIntervention,
     ReflectiveLowRankRotatedSpaceIntervention,
-    RotatedSpaceIntervention,
     SelectiveLowRankRotatedSpaceIntervention,
 )
 from ..utils import (
@@ -26,7 +25,6 @@ from ..utils import (
 )
 from .layers import (
     InterpretorUnembedCrossAttention,
-    LlamaDecoderLayerWithDoubleCrossAttention,
 )
 from .modules import LlamaInterpretorConfig
 

@@ -3,16 +3,17 @@ import os
 import warnings
 from math import ceil
 from typing import Dict, List, Optional
+
 import matplotlib.pyplot as plt
 import seaborn as sns
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import wandb
 from omegaconf import DictConfig, OmegaConf
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
+import wandb
 from logger import get_logger
 
 from ..das_utils import QuasiProjectiveIntervention
@@ -27,6 +28,7 @@ class RavelInterpretorHypernetwork(nn.Module):
         super().__init__()
 
         self.config = config
+        self.device = device
         self.interpretor_config: LlamaInterpretorConfig = (
             LlamaInterpretorConfig.from_pretrained(config.model.name_or_path)
         )
@@ -201,52 +203,24 @@ class RavelInterpretorHypernetwork(nn.Module):
     # Generate text using the target model, with a new edit application at every step.
     # This is a very slow way to generate text.
     # If you only want to edit first k tokens, use the forward pass instead with stop_editing_index = k
-    def inspect_batch_prediction_ouptuts(
-        self, batch, inference_mode=None, eval_n_label_tokens=None
-    ):
-        assert inference_mode in [
-            None,
-            "column_argmax",
-            "global_argmax",
-            "groundtruth",
-            "bidding_argmax",
-        ]
+    def inspect_batch_prediction_ouptuts(self, batch, eval_n_label_tokens=None):
         self.interpretor.eval()
 
         correct_idxs = []
 
-        if inference_mode == "groundtruth":
-            intervention_weight = torch.zeros(
-                len(batch["editor_input_ids"]),
-                batch["source_input_ids"].shape[1] + 1,
-                batch["base_input_ids"].shape[1],
-            ).to("cuda")
-            intervention_weight[:, -1, :] = 1.0
-
-            for i in range(len(batch["base_entity_position_ids"])):
-                intervention_weight[i, -1, batch["base_entity_position_ids"][i]] = 0.0
-                intervention_weight[
-                    i,
-                    batch["source_entity_position_ids"][i],
-                    batch["base_entity_position_ids"][i],
-                ] = 1.0
-
-        else:
-            intervention_weight = None
-
         with torch.no_grad():
             predictions = self.forward(
-                editor_input_ids=batch["editor_input_ids"].to("cuda"),
-                base_input_ids=batch["base_input_ids"].to("cuda"),
-                base_attention_mask=batch["base_attention_mask"].to("cuda"),
-                base_intervention_mask=batch["base_intervention_mask"].to("cuda"),
-                source_input_ids=batch["source_input_ids"].to("cuda"),
-                source_attention_mask=batch["source_attention_mask"].to("cuda"),
-                source_intervention_mask=batch["source_intervention_mask"].to("cuda"),
-                labels=batch["labels"].to("cuda"),
+                editor_input_ids=batch["editor_input_ids"].to(self.device),
+                base_input_ids=batch["base_input_ids"].to(self.device),
+                base_attention_mask=batch["base_attention_mask"].to(self.device),
+                base_intervention_mask=batch["base_intervention_mask"].to(self.device),
+                source_input_ids=batch["source_input_ids"].to(self.device),
+                source_attention_mask=batch["source_attention_mask"].to(self.device),
+                source_intervention_mask=batch["source_intervention_mask"].to(
+                    self.device
+                ),
+                labels=batch["labels"].to(self.device),
                 output_intervention_weight=True,
-                inference_mode=inference_mode,
-                intervention_weight=intervention_weight,
             )
 
             batch_pred_ids = torch.argmax(predictions["logits"], dim=-1)
@@ -490,28 +464,7 @@ class RavelInterpretorHypernetwork(nn.Module):
                 else len(test_loader.data_loader),
             ):
                 # Move entire batch to GPU once
-                batch = {k: v.to("cuda") for k, v in batch.items()}
-
-                if inference_mode == "groundtruth":
-                    intervention_weight = torch.zeros(
-                        len(batch["editor_input_ids"]),
-                        batch["source_input_ids"].shape[1] + 1,
-                        batch["base_input_ids"].shape[1],
-                        device=batch["editor_input_ids"].device,
-                    )
-                    intervention_weight[:, -1, :] = 1.0
-
-                    for i in range(len(batch["base_entity_position_ids"])):
-                        intervention_weight[
-                            i, -1, batch["base_entity_position_ids"][i]
-                        ] = 0.0
-                        intervention_weight[
-                            i,
-                            batch["source_entity_position_ids"][i],
-                            batch["base_entity_position_ids"][i],
-                        ] = 1.0
-                else:
-                    intervention_weight = None
+                batch = {k: v.to(self.device) for k, v in batch.items()}
 
                 predictions = self.forward(
                     editor_input_ids=batch["editor_input_ids"],
@@ -522,19 +475,16 @@ class RavelInterpretorHypernetwork(nn.Module):
                     source_attention_mask=batch["source_attention_mask"],
                     source_intervention_mask=batch["source_intervention_mask"],
                     labels=batch["labels"],
-                    inference_mode=inference_mode,
-                    intervention_weight=intervention_weight,
                 )
                 test_loss.append(predictions["loss"].item())
                 if isinstance(self.interpretor.das_module, QuasiProjectiveIntervention):
                     self.interpretor.zero_penalty()
 
                 batch_pred_ids = torch.argmax(predictions["logits"], dim=-1)
-
                 is_causal.extend(batch["is_causal"].cpu().numpy().tolist())
 
                 for i, (label, pred_ids) in enumerate(
-                    zip(batch["labels"].to("cuda"), batch_pred_ids)
+                    zip(batch["labels"].to(self.device), batch_pred_ids)
                 ):
                     label_idx = label != -100
                     output_idx = torch.zeros_like(label_idx)
@@ -584,66 +534,11 @@ class RavelInterpretorHypernetwork(nn.Module):
 
         return per_dataset_accuracies, per_dataset_test_loss, per_dataset_correct_idxs
 
-    def _intervention_number(self, intervention_weight, mean=True):
-        p = intervention_weight[:, :-1, :]
-        p = torch.sum(p, dim=-1)
-        p = torch.sum(p, dim=-1)
-
+    def _entropy(self, x, mean=True):
         if mean:
-            p = torch.mean(p)
+            return -torch.sum(x * torch.log(x + 1e-12), dim=-1).mean()
 
-        return p
-
-    def _intervention_entropy(
-        self,
-        intervention_weight,
-        mean=True,
-        normalize=False,
-        balanced=False,
-        atticus=False,
-    ):
-        """
-        Normalize the weight along dim=-1; if weight is zero across all tokens, then return itself
-        """
-
-        def __normalize(weight):
-            weight_sum = torch.sum(weight, dim=-1, keepdim=True)
-            weight_sum[weight_sum == 0.0] = 1.0
-            return weight / weight_sum
-
-        def __balance(weight):
-            weight_sum = torch.sum(weight, dim=-1, keepdim=False)
-            weight_sum[weight_sum == 0.0] = 1.0
-            return weight_sum
-
-        def __append_column(weight):
-            weight_sum = torch.sum(weight, dim=-1, keepdim=False)
-            new_column = torch.max(
-                1.0 - weight_sum, torch.tensor(0.0).to(weight.device)
-            )
-            return torch.cat([weight, new_column.unsqueeze(-1)], dim=-1)
-
-        p = intervention_weight[:, :-1, :]
-
-        if atticus:
-            p = __append_column(p)
-
-        if normalize:
-            p = __normalize(p)
-
-        logp = torch.log(p + 1e-8)
-        entropy = -torch.sum(p * logp, dim=-1)
-
-        if balanced:
-            balanced_weight = __balance(intervention_weight[:, :-1, :])
-
-            entropy = entropy * torch.pow(balanced_weight, 0.5)
-
-        if mean:
-            entropy = torch.mean(entropy, dim=0)
-            entropy = torch.mean(entropy)
-
-        return entropy
+        return -torch.sum(x * torch.log(x + 1e-12), dim=-1)
 
     def run_train(
         self,
@@ -657,8 +552,7 @@ class RavelInterpretorHypernetwork(nn.Module):
         checkpoint_per_steps = self.config.training.checkpoint_per_steps
         save_dir = self.config.training.save_dir
         save_model = self.config.training.save_model
-        debug_model = self.config.training.debug_model
-        run_name = self.config.wandb.run_name
+        run_name = self.config.wandb_config.run_name
         causal_loss_weight = self.config.loss.causal_loss_weight
         iso_loss_weight = self.config.loss.iso_loss_weight
         target_intervention_num = self.config.loss.get("target_intervention_num", None)
@@ -706,7 +600,7 @@ class RavelInterpretorHypernetwork(nn.Module):
                     total_steps + 1,
                 )
                 .to(self.interpretor_config.torch_dtype)
-                .to("cuda")
+                .to(self.device)
             )
             self.interpretor.das_module.set_temperature(
                 das_temperature_schedule[cur_steps]
@@ -798,66 +692,22 @@ class RavelInterpretorHypernetwork(nn.Module):
                     num_datapoints_in_epoch += current_batch_size
 
                     # Move all batch items to device
-                    batch = {k: v.to("cuda") for k, v in batch.items()}
+                    batch = {k: v.to(self.device) for k, v in batch.items()}
 
-                    if not debug_model:
-                        if all(
-                            inference_mode is None for inference_mode in inference_modes
-                        ):
-                            warnings.warn(
-                                "Inference modes are none -> will use hypernetwork attention weights for intervention"
-                            )
-                        prediction = self.forward(
-                            editor_input_ids=batch["editor_input_ids"],
-                            base_input_ids=batch["base_input_ids"],
-                            base_attention_mask=batch["base_attention_mask"],
-                            base_intervention_mask=batch["base_intervention_mask"],
-                            source_input_ids=batch["source_input_ids"],
-                            source_attention_mask=batch["source_attention_mask"],
-                            source_intervention_mask=batch["source_intervention_mask"],
-                            labels=batch["labels"],
-                            is_causal=batch["is_causal"],
-                            causal_loss_weight=causal_loss_weight,
-                            iso_loss_weight=iso_loss_weight,
-                            output_intervention_weight=True,
-                            # NOTE: this results in using hypernetwork attn weights for intervention
-                            inference_mode=inference_modes[0],
-                        )
-                    else:
-                        intervention_weight = torch.zeros(
-                            len(batch["editor_input_ids"]),
-                            batch["source_input_ids"].shape[1] + 1,
-                            batch["base_input_ids"].shape[1],
-                            device=batch["editor_input_ids"].device,
-                        )
-                        intervention_weight[:, -1, :] = 1.0
-
-                        for i in range(len(batch["base_entity_position_ids"])):
-                            intervention_weight[
-                                i, -1, batch["base_entity_position_ids"][i]
-                            ] = 0.0
-                            intervention_weight[
-                                i,
-                                batch["source_entity_position_ids"][i],
-                                batch["base_entity_position_ids"][i],
-                            ] = 1.0
-
-                        prediction = self.forward(
-                            editor_input_ids=batch["editor_input_ids"],
-                            base_input_ids=batch["base_input_ids"],
-                            base_attention_mask=batch["base_attention_mask"],
-                            base_intervention_mask=batch["base_intervention_mask"],
-                            source_input_ids=batch["source_input_ids"],
-                            source_attention_mask=batch["source_attention_mask"],
-                            source_intervention_mask=batch["source_intervention_mask"],
-                            labels=batch["labels"],
-                            is_causal=batch["is_causal"],
-                            causal_loss_weight=causal_loss_weight,
-                            iso_loss_weight=iso_loss_weight,
-                            output_intervention_weight=True,
-                            intervention_weight=intervention_weight,
-                            inference_mode="groundtruth",
-                        )
+                    prediction = self.forward(
+                        editor_input_ids=batch["editor_input_ids"],
+                        base_input_ids=batch["base_input_ids"],
+                        base_attention_mask=batch["base_attention_mask"],
+                        base_intervention_mask=batch["base_intervention_mask"],
+                        source_input_ids=batch["source_input_ids"],
+                        source_attention_mask=batch["source_attention_mask"],
+                        source_intervention_mask=batch["source_intervention_mask"],
+                        labels=batch["labels"],
+                        is_causal=batch["is_causal"],
+                        causal_loss_weight=causal_loss_weight,
+                        iso_loss_weight=iso_loss_weight,
+                        output_intervention_weight=True,
+                    )
 
                     training_loss = 0
 
