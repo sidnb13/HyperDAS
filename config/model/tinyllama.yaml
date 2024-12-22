@@ -2,7 +2,7 @@ defaults:
   - base
   - _self_
 
-name_or_path: "llamafactory/tiny-random-Llama-3"
+name_or_path: "TinyLlama/TinyLlama_v1.1"
 intervention_layer: 15
 das_dimension: 32
 num_editing_heads: 32

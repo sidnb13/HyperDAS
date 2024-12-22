@@ -131,15 +131,19 @@ class LlamaAttentionWithCrossAttention(LlamaAttention):
 
         past_key_value = getattr(self, "past_key_value", past_key_value)
 
-        breakpoint()
-
         if self.is_cross_attention:
             q_cos, q_sin = self.rotary_emb(query_states, position_ids)
             query_states = apply_rotary_pos_emb_single_attn(query_states, q_cos, q_sin)
             kv_cos, kv_sin = self.rotary_emb(value_states, kv_position_ids)
             key_states = apply_rotary_pos_emb_single_attn(key_states, kv_cos, kv_sin)
 
-            kv_position_ids.view(33, -1)
+            # TODO: why is this hardcoded
+            # kv_position_ids.view(33, -1)
+            kv_position_ids = (
+                torch.arange(kv_len, device=hidden_states.device)
+                .unsqueeze(0)
+                .expand(bsz, -1)
+            )
         else:
             cos, sin = self.rotary_emb(value_states, position_ids)
             query_states, key_states = apply_rotary_pos_emb(

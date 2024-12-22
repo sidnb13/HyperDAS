@@ -715,6 +715,7 @@ class LlamaInterpretor(nn.Module):
         output_intervention_weight: bool = True,
         source_intervention_weight: torch.Tensor = None,
         base_intervention_weight: torch.Tensor = None,
+        return_basis: bool = False
     ) -> InterpretorModelOutput:
         if intervention_layer is None:
             intervention_layer = self.config.intervention_layer
@@ -842,14 +843,6 @@ class LlamaInterpretor(nn.Module):
             interpretor_output
         )
 
-        # source_intervention_weight[0, :] = 0.0
-        # source_intervention_weight[0, 6] = 1.0
-
-        # base_intervention_weight[0, :] = 0.0
-        # base_intervention_weight[0, 18] = 1.0
-
-        # print(source_intervention_weight[0])
-
         source_output = self.target_model(
             input_ids=source_input_ids,
             attention_mask=source_attention_mask,
@@ -867,7 +860,8 @@ class LlamaInterpretor(nn.Module):
 
         source_intervention = source_intervention.sum(dim=1)
 
-        # print(source_intervention[0])
+        das_metrics = {}
+        das_aux_outputs = {}
 
         # Run target model with edit vectors.
         # This adds the edit vectors to the given hidden state at the specified batch index, position, and layer
@@ -890,28 +884,44 @@ class LlamaInterpretor(nn.Module):
                     * base_hidden_states
                 )
 
-                """print(source_intervention_hidden_states[0, 18, :])
-                print(base_hidden_states[0, 18, :])
-                
-                print()
-                
-                print(source_intervention_hidden_states[0, 19, :])
-                print(base_hidden_states[0, 19, :])"""
-
                 if self.das_selective_subspace:
-                    mixed_output = self.das_module(
+                    intervention_output = self.das_module(
                         base_hidden_states,
                         source_intervention_hidden_states,
                         hypernet_hidden_states,
+                        return_basis=return_basis,
                     )
                 else:
-                    mixed_output = self.das_module(
+                    intervention_output = self.das_module(
                         base_hidden_states,
                         source_intervention_hidden_states,
                         batch_size,
+                        return_basis=return_basis,
                     )
 
-                # print(mixed_output - base_hidden_states)
+                mixed_output, module_das_metrics, basis = (
+                    intervention_output.mixed_output,
+                    intervention_output.metrics,
+                    intervention_output.basis,
+                )
+
+                # Find the module name in the state dict
+                module_name = next(
+                    (
+                        name
+                        for name, mod in self.target_model.named_modules()
+                        if mod is module
+                    ),
+                    None,
+                )
+
+                das_aux_outputs[f"{module_name}/basis"] = basis
+
+                for k, v in module_das_metrics.items():
+                    if module_name:
+                        das_metrics[f"{module_name}/{k}"] = v
+                    else:
+                        das_metrics[f"unknown_module/{k}"] = v
 
                 output[0][:] += mixed_output - base_hidden_states
             else:
