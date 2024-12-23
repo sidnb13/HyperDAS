@@ -76,8 +76,8 @@ def run_experiment(
         tokenizer,
         source_suffix_visibility=config.dataset.source_suffix_visibility,
         base_suffix_visibility=config.dataset.base_suffix_visibility,
+        contain_entity_position=True,
         add_space_before_target=True,
-        contain_entity_position="groundtruth" in config.model.inference_modes,
     )
 
     # very hacky

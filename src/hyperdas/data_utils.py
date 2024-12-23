@@ -4,9 +4,26 @@ import random
 
 import numpy as np
 import torch
-from datasets import Dataset
+from datasets import Dataset, load_from_disk
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+
+
+def cleanup_dataset(dataset):
+    error_idxs = []
+
+    for i in range(len(dataset)):
+        if dataset[i]["input_prefix"] == "":
+            error_idxs.append(i)
+        elif dataset[i]["counterfactual_input_prefix"] == "":
+            error_idxs.append(i)
+        elif dataset[i]["target"] == "":
+            error_idxs.append(i)
+        elif dataset[i]["counterfactual_target"] == "":
+            error_idxs.append(i)
+
+    print(f"Found {len(error_idxs)} errors in the dataset")
+    return dataset.select([i for i in range(len(dataset)) if i not in error_idxs])
 
 
 def get_ravel_collate_fn(
@@ -16,6 +33,7 @@ def get_ravel_collate_fn(
     source_suffix_visibility=False,
     base_suffix_visibility=False,
     add_space_before_target=True,
+    bos_token_visibility=False,
 ):
     """
     Find the position of the entity text in the input_ids by comparing the entity text with the decoded input_ids.
@@ -85,32 +103,18 @@ def get_ravel_collate_fn(
             base_entity_position_ids = []
 
         tokenized = tokenizer(
-            input_texts,
-            return_tensors="pt",
-            padding=True,
-            max_length=50,
-            truncation=True,
-            add_special_tokens=False,
+            input_texts, return_tensors="pt", padding=True, truncation=True
         )
         tokenized_counterfactual = tokenizer(
-            counterfactual_texts,
-            return_tensors="pt",
-            padding=True,
-            max_length=50,
-            truncation=True,
-            add_special_tokens=False,
+            counterfactual_texts, return_tensors="pt", padding=True, truncation=True
         )
-
         tokenized_labels = []
 
         for i, input_ids in enumerate(tokenized["input_ids"]):
             input_prompt = tokenizer.bos_token + prefixes[i] + suffixes[i]
-            prompt_length = tokenizer(
-                input_prompt,
-                return_tensors="pt",
-                padding=False,
-                add_special_tokens=False,
-            )["input_ids"].shape[-1]
+            prompt_length = tokenizer(input_prompt, return_tensors="pt", padding=False)[
+                "input_ids"
+            ].shape[-1]
             if tokenizer.padding_side == "left":
                 prompt_length += torch.sum(input_ids == tokenizer.pad_token_id)
 
@@ -146,26 +150,71 @@ def get_ravel_collate_fn(
             label_length = torch.sum(label != -100)
             base_visibility_mask[-label_length:] = 0
 
+            if not bos_token_visibility:
+                source_bos_token_position = torch.where(
+                    tokenized_counterfactual["input_ids"][i] == tokenizer.bos_token_id
+                )[0][-1]
+                base_bos_token_position = torch.where(
+                    input_ids == tokenizer.bos_token_id
+                )[0][-1]
+
+                source_visibility_mask[source_bos_token_position] = 0
+                base_visibility_mask[base_bos_token_position] = 0
+
             if not source_suffix_visibility:
                 source_suffix_length = tokenizer(
-                    counterfactual_suffixes[i],
-                    return_tensors="pt",
-                    padding=False,
-                    add_special_tokens=False,
+                    counterfactual_suffixes[i], return_tensors="pt", padding=False
                 )["input_ids"].shape[-1]
-                source_visibility_mask[-source_suffix_length:] = 0
+
+                if source_suffix_length > 0:
+                    source_visibility_mask[-source_suffix_length:] = 0
 
             if not base_suffix_visibility:
                 base_suffix_length = tokenizer(
-                    suffixes[i],
-                    return_tensors="pt",
-                    padding=False,
-                    add_special_tokens=False,
+                    suffixes[i], return_tensors="pt", padding=False
                 )["input_ids"].shape[-1]
-                base_visibility_mask[prompt_length - base_suffix_length :] = 0
+
+                if base_suffix_length > 0:
+                    base_visibility_mask[prompt_length - base_suffix_length :] = 0
 
             source_intervention_visibility_masks.append(source_visibility_mask)
             base_intervention_visibility_masks.append(base_visibility_mask)
+
+            if (
+                source_visibility_mask.sum() == 0
+                or base_visibility_mask.sum(dim=-1) == 0
+            ):
+                if source_visibility_mask.sum() == 0:
+                    print("Source Text: ", counterfactual_texts[i])
+                    print("Source Input: ", tokenized_counterfactual["input_ids"][i])
+                    print("Source Mask: ", source_visibility_mask)
+                    print(
+                        "Source Attention Mask: ",
+                        tokenized_counterfactual["attention_mask"][i],
+                    )
+                    print("Source BOS Token Position: ", source_bos_token_position)
+
+                    if not source_suffix_visibility:
+                        print("Source Suffix: ", counterfactual_suffixes[i])
+                        print("Source Suffix Length: ", source_suffix_length)
+
+                if base_visibility_mask.sum() == 0:
+                    print("Base Text: ", input_texts[i])
+                    print("Base Input: ", tokenized["input_ids"][i])
+                    print("Base Mask: ", base_visibility_mask)
+                    print("Base Attention Mask: ", tokenized["attention_mask"][i])
+                    print("Base BOS Token Position: ", base_bos_token_position)
+
+                    if not base_suffix_visibility:
+                        print("Base Suffix: ", suffixes[i])
+                        print("Base Suffix Length: ", base_suffix_length)
+
+                print("Prompt Length: ", prompt_length)
+                print("Label: ", label)
+                print("Label Text: ", target_texts[i])
+                print("Tokenized Label: ", tokenizer(target_texts[i]))
+                print("Label Length: ", label_length)
+                raise ValueError("Attention Mask is all 0")
 
         base_intervention_mask = torch.stack(base_intervention_visibility_masks)
         source_intervention_mask = torch.stack(source_intervention_visibility_masks)
@@ -227,14 +276,9 @@ def get_ravel_collate_fn(
                 entities.append(b["entity"])
                 counterfactual_entities.append(b["counterfactual_entity"])
 
-        # NOTE: truncate=true was here before (sidnb13 removed)
         editor_input_ids = tokenizer(
-            edit_instructions,
-            return_tensors="pt",
-            padding=True,
-            add_special_tokens=False,
+            edit_instructions, return_tensors="pt", padding=True, truncation=True
         )["input_ids"]
-
         is_causal = torch.tensor([b["attribute_type"] == "causal" for b in batch])
         returned_dict = {
             "editor_input_ids": editor_input_ids,
@@ -315,7 +359,7 @@ def get_ravel_collate_fn(
 
 
 def generate_ravel_dataset(
-    n_samples=None,
+    n_samples,
     root_path="./data/ravel/ravel_clean",
     domain="city",
     isolate_attributes=["Continent"],
@@ -324,7 +368,6 @@ def generate_ravel_dataset(
     template_split="train",
     entity_split="train",
     use_wikipedia_template=True,
-    edit_instruction_template="{base_entity} ; {source_entity} - {random_target_attribute}",
 ):
     def split_into_prefix_suffix(text, entity):
         splits = text.split(entity)
@@ -465,12 +508,7 @@ def generate_ravel_dataset(
                 "input_suffix": input_suffix,
                 "counterfactual_input_prefix": counterfactual_input_prefix,
                 "counterfactual_input_suffix": counterfactual_input_suffix,
-                # "edit_instruction": f"{base_entity} ; {source_entity} - {target_attribute}",
-                "edit_instruction": edit_instruction_template.format(
-                    base_entity=base_entity,
-                    source_entity=source_entity,
-                    random_target_attribute=random.choice(target_attributes),
-                ),
+                "edit_instruction": f"{base_entity} ; {source_entity} - {target_attribute}",
                 "entity": base_entity,
                 "counterfactual_entity": source_entity,
                 "target": entity_dict[base_entity][target_attribute],
