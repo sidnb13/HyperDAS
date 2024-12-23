@@ -137,7 +137,7 @@ class LlamaAttentionWithCrossAttention(LlamaAttention):
             kv_cos, kv_sin = self.rotary_emb(value_states, kv_position_ids)
             key_states = apply_rotary_pos_emb_single_attn(key_states, kv_cos, kv_sin)
 
-            # TODO: why is this hardcoded
+            # TODO: potential bug
             # kv_position_ids.view(33, -1)
             kv_position_ids = (
                 torch.arange(kv_len, device=hidden_states.device)

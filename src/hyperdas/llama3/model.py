@@ -142,7 +142,7 @@ class RavelInterpretorHypernetwork(nn.Module):
         iso_loss_weight: float = 1.0,
         source_intervention_weight: torch.Tensor = None,
         base_intervention_weight: torch.Tensor = None,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> InterpretorModelOutput:
         _pred: InterpretorModelOutput = self.interpretor(
             editor_input_ids=editor_input_ids,
             editor_attention_mask=editor_input_ids

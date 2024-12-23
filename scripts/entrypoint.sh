@@ -41,7 +41,7 @@ echo "🔧 Setting up git configuration..."
 
 git config --global --replace-all user.email "${GIT_EMAIL}"
 git config --global --replace-all user.name "${GIT_NAME}"
-git config --global --replace-all safe.directory /workspace/${PWD}
+git config --global --replace-all safe.directory /workspace/${PROJECT_NAME}
 
 echo "🚀 Container is ready!"
 echo "-----------------------------------"

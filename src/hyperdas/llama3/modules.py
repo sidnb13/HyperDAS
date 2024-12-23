@@ -715,7 +715,7 @@ class LlamaInterpretor(nn.Module):
         output_intervention_weight: bool = True,
         source_intervention_weight: torch.Tensor = None,
         base_intervention_weight: torch.Tensor = None,
-        return_basis: bool = False
+        return_basis: bool = False,
     ) -> InterpretorModelOutput:
         if intervention_layer is None:
             intervention_layer = self.config.intervention_layer
@@ -748,6 +748,12 @@ class LlamaInterpretor(nn.Module):
                 ),
                 dim=2,
             )
+
+        if (base_intervention_mask.sum(-1) == 0).any() or (
+            source_intervention_mask.sum(-1) == 0
+        ).any():
+            print("BASE", base_intervention_mask.sum(-1))
+            print("SOURCE", source_intervention_mask.sum(-1))
 
         if base_intervention_mask is None:
             if base_attention_mask is not None:
@@ -956,5 +962,10 @@ class LlamaInterpretor(nn.Module):
             base_intervention_weight=base_intervention_weight,
             target_hidden_states=target_result.hidden_states,
         )
+        output.metrics = das_metrics
+
+        if output_intervention_weight:
+            output.source_intervention_weight = source_intervention_weight
+            output.base_intervention_weight = base_intervention_weight
 
         return output

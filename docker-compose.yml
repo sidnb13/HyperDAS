@@ -2,7 +2,7 @@ services:
   hyperdas:
     restart: always
     container_name: ${CONTAINER_NAME}
-    image: ${CONTAINER_NAME}:latest  # Local project image
+    image: ${CONTAINER_NAME}:latest # Local project image
     env_file: .env
     build:
       context: .
@@ -21,7 +21,7 @@ services:
       - "8765:8265"
       - "10001:10001"
       - "6379:6379"
-    
+
     command: >
       bash -c "
       ray start --head
@@ -33,7 +33,7 @@ services:
       --node-ip-address=0.0.0.0
       --block &&
       tail -f /dev/null"
-    
+
     deploy:
       resources:
         reservations:

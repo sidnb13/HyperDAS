@@ -2,7 +2,7 @@
     "name": "HyperDAS",
     "build": {
         "context": "..",
-        "dockerfile": "../Dockerfile.mac"
+        "dockerfile": "../Dockerfile"
     },
     "workspaceFolder": "/workspace/HyperDAS",
     "workspaceMount": "source=${localWorkspaceFolder},target=/workspace/HyperDAS,type=bind",
