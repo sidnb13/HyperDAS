@@ -9,7 +9,6 @@
     "customizations": {
         "vscode": {
             "extensions": [
-                "anysphere.pyright",
                 "charliermarsh.ruff",
                 "codezombiech.gitignore",
                 "donjayamanne.python-extension-pack",

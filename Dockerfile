@@ -8,12 +8,12 @@ WORKDIR /workspace/${PROJECT_NAME}
 
 # Project-specific requirements only
 COPY requirements.txt /tmp/
-RUN /root/.local/bin/uv pip install --system --no-cache-dir -r /tmp/requirements.txt && \
+RUN pip install --no-cache-dir -r /tmp/requirements.txt && \
     rm /tmp/requirements.txt
 
 # If python package exists, install it
 RUN python setup.py develop || true \
-    && /root/.local/bin/uv pip install --system --no-cache-dir -e . || true
+    && pip install --no-cache-dir -e . || true
 
 COPY scripts/entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/entrypoint.sh
